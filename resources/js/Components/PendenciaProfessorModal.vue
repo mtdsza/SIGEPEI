@@ -2,6 +2,7 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import AlunoAvatar from '@/Components/AlunoAvatar.vue';
+import { confirmDiscard, useUnsavedChanges } from '@/composables/useUnsavedChanges';
 import {
     ESTRATEGIAS_ENSINO_OPCOES,
     ESTRATEGIAS_AVALIACAO_OPCOES,
@@ -20,7 +21,7 @@ const props = defineProps({
     },
 });
 
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'saved']);
 
 const showOrientacoes = ref(true);
 
@@ -115,10 +116,20 @@ const initForm = () => {
             nota_3: '',
         }));
     }
+
+    form.defaults();
+};
+
+useUnsavedChanges(() => props.show && form.isDirty);
+
+const tentarFechar = () => {
+    if (!confirmDiscard(form.isDirty)) return;
+    emit('close');
 };
 
 watch(() => props.show, (newVal) => {
     if (newVal) {
+        form.clearErrors();
         initForm();
     }
 });
@@ -142,9 +153,21 @@ const removePlanejamentoRow = (index) => {
 const submit = () => {
     if (!props.pendencia) return;
 
+    const dadosImpressao = {
+        pei_id: props.pendencia.pei_id,
+        pei_codigo: props.pendencia.pei_codigo || '',
+        aluno_nome: props.pendencia.aluno_nome || '',
+        disciplina_id: props.pendencia.disciplina_id,
+        disciplina_codigo: props.pendencia.disciplina_codigo || '',
+        disciplina_nome: props.pendencia.atribuicao || '',
+        trimestre: props.pendencia.trimestre || 1,
+    };
+
     form.post(route('peis.update-disciplina-trimestre', [props.pendencia.pei_id, props.pendencia.disciplina_id]), {
         preserveScroll: true,
+        preserveState: true,
         onSuccess: () => {
+            emit('saved', dadosImpressao);
             emit('close');
         },
     });
@@ -152,7 +175,7 @@ const submit = () => {
 
 const handleKeyDown = (e) => {
     if (e.key === 'Escape' && props.show) {
-        emit('close');
+        tentarFechar();
     }
 };
 
@@ -169,11 +192,11 @@ onUnmounted(() => {
     <div
         v-if="show && pendencia"
         class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs overflow-y-auto"
-        @click.self="emit('close')"
+        @click.self="tentarFechar"
     >
         <div class="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-sm shadow-2xl max-w-5xl w-full p-5 sm:p-7 space-y-6 max-h-[92vh] overflow-y-auto my-6 text-xs">
             
-            <!-- 1. Cabeçalho Principal do Modal -->
+            <!-- 1. cabeçalho principal do modal -->
             <div class="flex items-start justify-between border-b border-slate-200 dark:border-zinc-700 pb-3.5">
                 <div>
                     <div class="flex items-center gap-2">
@@ -193,7 +216,7 @@ onUnmounted(() => {
                 </div>
                 <button
                     type="button"
-                    @click="emit('close')"
+                    @click="tentarFechar"
                     class="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 text-2xl leading-none p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
                     title="Fechar (Esc)"
                 >
@@ -201,7 +224,7 @@ onUnmounted(() => {
                 </button>
             </div>
 
-            <!-- 2. Cartão de Contexto do Estudante e Necessidades Específicas -->
+            <!-- 2. cartão de contexto do estudante e necessidades específicas -->
             <div class="bg-slate-50 dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-700 rounded-sm p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div class="flex items-center gap-3.5 min-w-0">
                     <AlunoAvatar :src="pendencia.aluno_foto_url" :nome="pendencia.aluno_nome" size="lg" />
@@ -257,7 +280,7 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <!-- 3. Caixa de Orientação Pedagógica (recolhível) -->
+            <!-- 3. caixa de orientação pedagógica (recolhível) -->
             <div class="bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/80 rounded-sm p-3.5">
                 <div class="flex items-center justify-between cursor-pointer select-none" @click="showOrientacoes = !showOrientacoes">
                     <div class="flex items-center gap-2 text-emerald-900 dark:text-emerald-200 font-bold text-xs">
@@ -288,10 +311,19 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <!-- 4. Formulário de Preenchimento -->
+            <!-- 4. formulário de preenchimento -->
             <form @submit.prevent="submit" class="space-y-6">
+                <div
+                    v-if="Object.keys(form.errors).length > 0"
+                    class="p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 rounded text-xs text-rose-700 dark:text-rose-300 space-y-1"
+                >
+                    <p class="font-bold">Verifique os campos antes de salvar:</p>
+                    <ul class="list-disc pl-4 space-y-0.5">
+                        <li v-for="(msg, key) in form.errors" :key="key">{{ msg }}</li>
+                    </ul>
+                </div>
                 <!-- ============================================== -->
-                <!-- PARTE 1: Planejamento Pedagógico e Adaptação -->
+                <!-- parte 1: planejamento pedagógico e adaptação -->
                 <!-- ============================================== -->
                 <div class="space-y-4">
                     <div class="flex items-center justify-between border-b border-slate-200 dark:border-zinc-700 pb-2">
@@ -337,7 +369,7 @@ onUnmounted(() => {
                                 </button>
                             </div>
 
-                            <!-- 1.1 Objetivos e Conteúdos -->
+                            <!-- 1.1 objetivos e conteúdos -->
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-[11px] font-semibold text-slate-700 dark:text-zinc-300 uppercase mb-1">
@@ -366,7 +398,7 @@ onUnmounted(() => {
                                 </div>
                             </div>
 
-                            <!-- 1.2 Metodologias / Estratégias / Recursos -->
+                            <!-- 1.2 metodologias / estratégias / recursos -->
                             <div class="p-3.5 bg-white dark:bg-zinc-800 rounded-sm border border-slate-200 dark:border-zinc-700 space-y-4">
                                 <div class="border-b border-slate-200 dark:border-zinc-700 pb-2 flex items-center justify-between">
                                     <div>
@@ -382,7 +414,7 @@ onUnmounted(() => {
                                     </span>
                                 </div>
 
-                                <!-- 1 - Estratégias de ensino -->
+                                <!-- 1 - estratégias de ensino -->
                                 <div class="space-y-2">
                                     <div class="flex items-center justify-between">
                                         <span class="text-xs font-bold text-slate-800 dark:text-zinc-200">
@@ -421,7 +453,7 @@ onUnmounted(() => {
                                     </div>
                                 </div>
 
-                                <!-- 2 - Estratégias e condições de avaliação -->
+                                <!-- 2 - estratégias e condições de avaliação -->
                                 <div class="space-y-2 pt-3 border-t border-slate-200 dark:border-zinc-700/60">
                                     <div class="flex items-center justify-between">
                                         <span class="text-xs font-bold text-slate-800 dark:text-zinc-200">
@@ -461,7 +493,7 @@ onUnmounted(() => {
                                 </div>
                             </div>
 
-                            <!-- 1.3 Tempo / Prazo de Realização -->
+                            <!-- 1.3 tempo / prazo de realização -->
                             <div class="p-3.5 bg-white dark:bg-zinc-800 rounded-sm border border-slate-200 dark:border-zinc-700 space-y-2">
                                 <label class="block text-[11px] font-semibold text-slate-700 dark:text-zinc-300 uppercase">
                                     Tempo <span class="text-slate-400 font-normal lowercase">(prazo de realização do trabalho)</span> <span class="text-red-500">*</span>
@@ -493,7 +525,7 @@ onUnmounted(() => {
                                 </div>
                             </div>
 
-                            <!-- 1.4 Avaliação de Desempenho / Resultados -->
+                            <!-- 1.4 avaliação de desempenho / resultados -->
                             <div class="p-3.5 bg-white dark:bg-zinc-800 rounded-sm border border-slate-200 dark:border-zinc-700 space-y-3">
                                 <div class="flex items-baseline justify-between border-b border-slate-200 dark:border-zinc-700 pb-2">
                                     <div>
@@ -537,7 +569,7 @@ onUnmounted(() => {
                                 </div>
                             </div>
 
-                            <!-- 1.5 Sugestões para melhor aproveitamento -->
+                            <!-- 1.5 sugestões para melhor aproveitamento -->
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-700 dark:text-zinc-300 uppercase mb-1">
                                     Sugestões para melhor aproveitamento do discente
@@ -554,7 +586,7 @@ onUnmounted(() => {
                 </div>
 
                 <!-- ============================================== -->
-                <!-- PARTE 2: Instrumentos de Avaliação e Notas -->
+                <!-- parte 2: instrumentos de avaliação e notas -->
                 <!-- ============================================== -->
                 <div class="space-y-4 pt-4 border-t border-slate-200 dark:border-zinc-700">
                     <div>
@@ -653,7 +685,7 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <!-- 5. Barra de Ações Inferior -->
+                <!-- 5. barra de ações inferior -->
                 <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-zinc-700">
                     <a
                         :href="route('peis.show', pendencia.pei_id)"
@@ -669,7 +701,7 @@ onUnmounted(() => {
                     <div class="flex items-center space-x-3 w-full sm:w-auto justify-end order-1 sm:order-2">
                         <button
                             type="button"
-                            @click="emit('close')"
+                            @click="tentarFechar"
                             class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 text-xs font-semibold rounded-sm border border-slate-300 dark:border-zinc-600 cursor-pointer transition-colors"
                         >
                             Cancelar

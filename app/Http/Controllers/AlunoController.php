@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -111,30 +112,34 @@ class AlunoController extends Controller
         $validated = $request->validate([
             'nome' => ['required', 'string', 'max:255'],
             'matricula' => ['required', 'string', 'max:50', 'unique:alunos,matricula'],
-            'data_nascimento' => ['required', 'date'],
+            'data_nascimento' => ['required', 'date', 'before_or_equal:today'],
             'deficiencias' => ['nullable', 'array'],
             'deficiencias.*' => ['exists:deficiencias,id'],
             'turma_id' => ['nullable', 'exists:turmas,id'],
         ]);
 
-        $aluno = Aluno::create([
-            'nome' => $validated['nome'],
-            'matricula' => $validated['matricula'],
-            'data_nascimento' => $validated['data_nascimento'],
-            'is_active' => true,
-        ]);
-
-        if (!empty($validated['deficiencias'])) {
-            $aluno->deficiencias()->sync($validated['deficiencias']);
-        }
-
-        if (!empty($validated['turma_id'])) {
-            $turma = Turma::find($validated['turma_id']);
-            $aluno->turmas()->attach($turma->id, [
-                'ano_letivo' => $turma->ano_letivo,
-                'is_atual' => true,
+        $aluno = DB::transaction(function () use ($validated) {
+            $aluno = Aluno::create([
+                'nome' => $validated['nome'],
+                'matricula' => $validated['matricula'],
+                'data_nascimento' => $validated['data_nascimento'],
+                'is_active' => true,
             ]);
-        }
+
+            if (!empty($validated['deficiencias'])) {
+                $aluno->deficiencias()->sync($validated['deficiencias']);
+            }
+
+            if (!empty($validated['turma_id'])) {
+                $turma = Turma::find($validated['turma_id']);
+                $aluno->turmas()->attach($turma->id, [
+                    'ano_letivo' => $turma->ano_letivo,
+                    'is_atual' => true,
+                ]);
+            }
+
+            return $aluno;
+        });
 
         // registra o cadastro do aluno na trilha de auditoria
         AuditService::log(
@@ -219,6 +224,7 @@ class AlunoController extends Controller
                 'data_nascimento' => $aluno->data_nascimento?->format('Y-m-d'),
                 'idade_formatada' => $idadeCalculada,
                 'foto_url' => $aluno->foto_url,
+                'is_active' => (bool) $aluno->is_active,
                 'deficiencias' => $aluno->deficiencias->map(fn ($d) => [
                     'id' => $d->id,
                     'codigo' => $d->codigo,
@@ -278,7 +284,7 @@ class AlunoController extends Controller
         $validated = $request->validate([
             'nome' => ['required', 'string', 'max:255'],
             'matricula' => ['required', 'string', 'max:50', Rule::unique('alunos', 'matricula')->ignore($aluno->id)],
-            'data_nascimento' => ['required', 'date'],
+            'data_nascimento' => ['required', 'date', 'before_or_equal:today'],
             'deficiencias' => ['nullable', 'array'],
             'deficiencias.*' => ['exists:deficiencias,id'],
             'turma_id' => ['nullable', 'exists:turmas,id'],
@@ -301,41 +307,58 @@ class AlunoController extends Controller
             'foto' => $aluno->foto_path ? 'Possui foto' : 'Sem foto',
         ];
 
-        // processa a substituição ou remoção da foto de perfil do discente
-        $fotoPath = $aluno->foto_path;
+        // processa a substituição ou remoção da foto de perfil do discente de forma segura
+        $fotoAnterior = $aluno->foto_path;
+        $fotoPath = $fotoAnterior;
+        $novoPath = null;
+        $deveRemoverAnterior = false;
+
         if ($request->hasFile('foto')) {
             $novoPath = $request->file('foto')->store(self::FOTO_DIR, self::FOTO_DISK);
-            if ($fotoPath) {
-                Storage::disk(self::FOTO_DISK)->delete($fotoPath);
-            }
             $fotoPath = $novoPath;
-        } elseif ($request->boolean('remover_foto') && $fotoPath) {
-            Storage::disk(self::FOTO_DISK)->delete($fotoPath);
+            $deveRemoverAnterior = (bool) $fotoAnterior;
+        } elseif ($request->boolean('remover_foto') && $fotoAnterior) {
             $fotoPath = null;
+            $deveRemoverAnterior = true;
         }
 
-        $aluno->update([
-            'nome' => $validated['nome'],
-            'matricula' => $validated['matricula'],
-            'data_nascimento' => $validated['data_nascimento'],
-            'foto_path' => $fotoPath,
-        ]);
-
-        $aluno->deficiencias()->sync($validated['deficiencias'] ?? []);
-
-        if (!empty($validated['turma_id'])) {
-            $turma = Turma::find($validated['turma_id']);
-            // desmarca as turmas anteriores como turma atual
-            $aluno->turmas()->updateExistingPivot($aluno->turmas->pluck('id'), ['is_atual' => false]);
-            
-            if ($aluno->turmas()->where('turma_id', $turma->id)->exists()) {
-                $aluno->turmas()->updateExistingPivot($turma->id, ['is_atual' => true, 'ano_letivo' => $turma->ano_letivo]);
-            } else {
-                $aluno->turmas()->attach($turma->id, [
-                    'ano_letivo' => $turma->ano_letivo,
-                    'is_atual' => true,
+        try {
+            DB::transaction(function () use ($request, $aluno, $validated, $fotoPath) {
+                $aluno->update([
+                    'nome' => $validated['nome'],
+                    'matricula' => $validated['matricula'],
+                    'data_nascimento' => $validated['data_nascimento'],
+                    'foto_path' => $fotoPath,
                 ]);
+
+                $aluno->deficiencias()->sync($validated['deficiencias'] ?? []);
+
+                if (!empty($validated['turma_id'])) {
+                    $turma = Turma::find($validated['turma_id']);
+                    // desmarca as turmas anteriores como turma atual
+                    $aluno->turmas()->updateExistingPivot($aluno->turmas->pluck('id'), ['is_atual' => false]);
+
+                    if ($aluno->turmas()->where('turma_id', $turma->id)->exists()) {
+                        $aluno->turmas()->updateExistingPivot($turma->id, ['is_atual' => true, 'ano_letivo' => $turma->ano_letivo]);
+                    } else {
+                        $aluno->turmas()->attach($turma->id, [
+                            'ano_letivo' => $turma->ano_letivo,
+                            'is_atual' => true,
+                        ]);
+                    }
+                } elseif ($request->has('turma_id') && empty($validated['turma_id'])) {
+                    $aluno->turmas()->updateExistingPivot($aluno->turmas->pluck('id'), ['is_atual' => false]);
+                }
+            });
+        } catch (\Throwable $e) {
+            if ($novoPath) {
+                Storage::disk(self::FOTO_DISK)->delete($novoPath);
             }
+            throw $e;
+        }
+
+        if ($deveRemoverAnterior && $fotoAnterior) {
+            Storage::disk(self::FOTO_DISK)->delete($fotoAnterior);
         }
 
         $turmaAtualNova = $aluno->fresh()->turmaAtual();
@@ -401,19 +424,21 @@ class AlunoController extends Controller
             'turma' => $turmaAntiga ? "{$turmaAntiga->nome_curso} ({$turmaAntiga->pivot->ano_letivo})" : 'Não vinculado',
         ];
 
-        $aluno->turmas()->updateExistingPivot($aluno->turmas->pluck('id'), ['is_atual' => false]);
+        DB::transaction(function () use ($aluno, $validated) {
+            $aluno->turmas()->updateExistingPivot($aluno->turmas->pluck('id'), ['is_atual' => false]);
 
-        if ($aluno->turmas()->where('turma_id', $validated['turma_id'])->exists()) {
-            $aluno->turmas()->updateExistingPivot($validated['turma_id'], [
-                'ano_letivo' => $validated['ano_letivo'],
-                'is_atual' => true,
-            ]);
-        } else {
-            $aluno->turmas()->attach($validated['turma_id'], [
-                'ano_letivo' => $validated['ano_letivo'],
-                'is_atual' => true,
-            ]);
-        }
+            if ($aluno->turmas()->where('turma_id', $validated['turma_id'])->exists()) {
+                $aluno->turmas()->updateExistingPivot($validated['turma_id'], [
+                    'ano_letivo' => $validated['ano_letivo'],
+                    'is_atual' => true,
+                ]);
+            } else {
+                $aluno->turmas()->attach($validated['turma_id'], [
+                    'ano_letivo' => $validated['ano_letivo'],
+                    'is_atual' => true,
+                ]);
+            }
+        });
 
         $turma = Turma::find($validated['turma_id']);
         AuditService::log(

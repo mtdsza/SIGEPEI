@@ -12,7 +12,7 @@ const props = defineProps({
 });
 
 const page = usePage();
-const isAdmin = computed(() => Boolean(page.props.auth?.user?.is_admin));
+const isAdminOrNai = computed(() => Boolean(page.props.auth?.user?.is_admin || page.props.auth?.user?.cargo === 'NAI'));
 
 const searchQuery = ref('');
 const showInactive = ref(false);
@@ -22,7 +22,7 @@ const itemsPerPage = 10;
 const filteredDeficiencias = computed(() => {
     let list = props.deficiencias;
 
-    if (!isAdmin.value || !showInactive.value) {
+    if (!isAdminOrNai.value || !showInactive.value) {
         list = list.filter(item => item.ativo !== false);
     }
 
@@ -30,8 +30,8 @@ const filteredDeficiencias = computed(() => {
 
     const query = searchQuery.value.toLowerCase();
     return list.filter(item =>
-        item.nome.toLowerCase().includes(query) ||
-        item.codigo.toLowerCase().includes(query)
+        (item.nome ?? '').toLowerCase().includes(query) ||
+        (item.codigo ?? '').toLowerCase().includes(query)
     );
 });
 
@@ -91,9 +91,9 @@ const toggleStatus = (item) => {
                         />
                     </div>
 
-                    <!-- controle de exibição de registros inativos para administradores -->
+                    <!-- controle de exibição de registros inativos para administradores e NAI -->
                     <label
-                        v-if="isAdmin"
+                        v-if="isAdminOrNai"
                         class="inline-flex items-center space-x-2 text-xs font-medium text-slate-700 dark:text-zinc-300 cursor-pointer select-none bg-white dark:bg-zinc-900 px-2.5 py-1.5 rounded-sm border border-slate-200 dark:border-zinc-700"
                     >
                         <input

@@ -30,10 +30,10 @@ const filteredPeis = computed(() => {
 
     const query = searchQuery.value.toLowerCase();
     return list.filter(item =>
-        item.aluno.toLowerCase().includes(query) ||
-        item.codigo.toLowerCase().includes(query) ||
-        item.turma.toLowerCase().includes(query) ||
-        item.ano.toString().includes(query)
+        (item.aluno ?? '').toLowerCase().includes(query) ||
+        (item.codigo ?? '').toLowerCase().includes(query) ||
+        (item.turma ?? '').toLowerCase().includes(query) ||
+        String(item.ano ?? '').includes(query)
     );
 });
 

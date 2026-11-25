@@ -347,7 +347,7 @@ const getModuloBadgeClass = (modulo) => {
 
                                 <!-- endereço ip do cliente -->
                                 <td class="px-4 py-3 font-mono text-[11px] text-slate-500 dark:text-zinc-400 whitespace-nowrap">
-                                    {{ log.ip_address || '127.0.0.1' }}
+                                    {{ log.ip_address || '—' }}
                                 </td>
 
                                 <!-- link para detalhes do evento -->

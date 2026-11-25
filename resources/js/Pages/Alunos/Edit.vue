@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AlunoAvatar from '@/Components/AlunoAvatar.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     aluno: {
@@ -29,6 +30,8 @@ const form = useForm({
     foto: null,
     remover_foto: false,
 });
+
+useUnsavedChanges(form);
 
 // gerenciamento da foto de perfil do discente
 const TAMANHO_MAXIMO_ORIGINAL = 15 * 1024 * 1024;
@@ -353,7 +356,7 @@ const submit = () => {
                     </Link>
                     <button
                         type="submit"
-                        :disabled="form.processing"
+                        :disabled="form.processing || processandoFoto"
                         class="px-4 py-2 bg-[#006633] hover:bg-emerald-800 dark:bg-emerald-700 text-white text-xs font-semibold rounded-sm shadow-sm disabled:opacity-50"
                     >
                         Salvar Alterações

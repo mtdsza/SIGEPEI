@@ -1,6 +1,7 @@
 <script setup>
 import InputError from '@/Components/InputError.vue';
 import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 defineProps({
     mustVerifyEmail: {
@@ -19,6 +20,8 @@ const form = useForm({
     name: user.name,
     email: user.email,
 });
+
+useUnsavedChanges(form);
 </script>
 
 <template>

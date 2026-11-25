@@ -1,9 +1,31 @@
 <script setup>
-import { ref, onMounted } from 'vue';
-import { Link } from '@inertiajs/vue3';
+import { ref, onMounted, watch } from 'vue';
+import { Link, usePage } from '@inertiajs/vue3';
 
+const page = usePage();
 const isDarkMode = ref(false);
 const mobileMenuOpen = ref(false);
+const flashMessage = ref(null);
+let flashTimer = null;
+
+watch(
+    () => [page.props.flash?.success, page.props.flash?.error],
+    ([success, error]) => {
+        clearTimeout(flashTimer);
+        if (error) {
+            flashMessage.value = { tipo: 'error', texto: error };
+        } else if (success) {
+            flashMessage.value = { tipo: 'success', texto: success };
+        } else {
+            flashMessage.value = null;
+            return;
+        }
+        flashTimer = setTimeout(() => {
+            flashMessage.value = null;
+        }, 6000);
+    },
+    { immediate: true }
+);
 
 const toggleTheme = () => {
     isDarkMode.value = !isDarkMode.value;
@@ -293,6 +315,25 @@ const isRouteActive = (pattern) => {
             <!-- conteúdo principal da página -->
             <main class="flex-1 p-4 md:p-6 lg:p-8">
                 <div class="max-w-7xl mx-auto">
+                    <div
+                        v-if="flashMessage"
+                        :class="[
+                            'mb-4 px-4 py-3 rounded-sm border text-xs font-medium flex items-center justify-between gap-3 shadow-sm',
+                            flashMessage.tipo === 'error'
+                                ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                                : 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                        ]"
+                    >
+                        <span>{{ flashMessage.texto }}</span>
+                        <button
+                            type="button"
+                            @click="flashMessage = null"
+                            class="text-current opacity-70 hover:opacity-100 font-bold leading-none"
+                            aria-label="Fechar aviso"
+                        >
+                            &times;
+                        </button>
+                    </div>
                     <slot />
                 </div>
             </main>

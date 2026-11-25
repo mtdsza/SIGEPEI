@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     turma: {
@@ -21,7 +22,13 @@ const form = useForm({
     nome_curso: props.turma.nome_curso,
     ano_letivo: props.turma.ano_letivo,
     disciplinas: props.turma.disciplinas && props.turma.disciplinas.length > 0
-        ? props.turma.disciplinas
+        ? props.turma.disciplinas.map((d) => ({
+            disciplina_id: d.disciplina_id,
+            professores: (d.professores || []).map((p) => ({
+                user_id: p.user_id,
+                is_substituto: Boolean(p.is_substituto),
+            })),
+        }))
         : [
             {
                 disciplina_id: '',
@@ -31,6 +38,8 @@ const form = useForm({
             },
         ],
 });
+
+useUnsavedChanges(form);
 
 const adicionarDisciplina = () => {
     form.disciplinas.push({

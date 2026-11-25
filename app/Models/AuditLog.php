@@ -24,6 +24,8 @@ class AuditLog extends Model
         'user_agent',
         'dados_anteriores',
         'dados_novos',
+        'created_at',
+        'updated_at',
     ];
 
     protected $casts = [

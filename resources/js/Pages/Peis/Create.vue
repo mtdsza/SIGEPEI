@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     alunosDisponiveis: {
@@ -26,7 +27,7 @@ const form = useForm({
     aluno_id: '',
     turma_id: '',
     ano_letivo: new Date().getFullYear(),
-    data_elaboracao: props.hoje || new Date().toISOString().split('T')[0],
+    data_elaboracao: props.hoje || new Date().toLocaleDateString('sv-SE'),
     diagnostico: '',
     // dados da ficha do discente (6 campos pedagógicos)
     tempo_livre: '',
@@ -51,6 +52,8 @@ const form = useForm({
         { demanda: '', encaminhamento_estrategia: '', responsavel: '' },
     ],
 });
+
+useUnsavedChanges(form);
 
 // discente selecionado e verificação de pei anterior
 const alunoSelecionado = computed(() => {

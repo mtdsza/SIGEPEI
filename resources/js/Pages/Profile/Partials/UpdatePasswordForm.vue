@@ -2,6 +2,7 @@
 import InputError from '@/Components/InputError.vue';
 import { useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const passwordInput = ref(null);
 const currentPasswordInput = ref(null);
@@ -11,6 +12,8 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 });
+
+useUnsavedChanges(form);
 
 const updatePassword = () => {
     form.put(route('password.update'), {

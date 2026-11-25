@@ -2,6 +2,9 @@
 import { ref } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import RelatorioPeiModal from '@/Components/RelatorioPeiModal.vue';
+import ImprimirDisciplinaPromptModal from '@/Components/ImprimirDisciplinaPromptModal.vue';
+import { confirmDiscard, useUnsavedChanges } from '@/composables/useUnsavedChanges';
 import {
     ESTRATEGIAS_ENSINO_OPCOES,
     ESTRATEGIAS_AVALIACAO_OPCOES,
@@ -53,7 +56,13 @@ const openFichaAlunoModal = () => {
     fichaAlunoForm.organizacao_e_prazos = props.pei.ficha_aluno?.organizacao_e_prazos || '';
     fichaAlunoForm.dificuldade_interacao_social = props.pei.ficha_aluno?.dificuldade_interacao_social || '';
     fichaAlunoForm.sugestoes_recursos_estrategias = props.pei.ficha_aluno?.sugestoes_recursos_estrategias || '';
+    fichaAlunoForm.defaults();
     showFichaAlunoModal.value = true;
+};
+
+const closeFichaAlunoModal = () => {
+    if (!confirmDiscard(fichaAlunoForm.isDirty)) return;
+    showFichaAlunoModal.value = false;
 };
 
 const submitFichaAlunoForm = () => {
@@ -104,7 +113,13 @@ const openFichaPeiModal = () => {
         }))
         : [{ demanda: '', encaminhamento_estrategia: '', responsavel: '' }];
 
+    fichaPeiForm.defaults();
     showFichaPeiModal.value = true;
+};
+
+const closeFichaPeiModal = () => {
+    if (!confirmDiscard(fichaPeiForm.isDirty)) return;
+    showFichaPeiModal.value = false;
 };
 
 const addFichaPeiResponsavel = () => {
@@ -187,7 +202,13 @@ const openNaiModal = (trimestreNum) => {
         });
     }
 
+    naiForm.defaults();
     showNaiModal.value = true;
+};
+
+const closeNaiModal = () => {
+    if (!confirmDiscard(naiForm.isDirty)) return;
+    showNaiModal.value = false;
 };
 
 const copiarResponsaveisNai1 = () => {
@@ -260,7 +281,13 @@ const editApoioForm = useForm({
 const openEditApoio = (apoio) => {
     editingApoio.value = apoio;
     editApoioForm.nome = apoio.nome;
+    editApoioForm.defaults();
     showEditApoioModal.value = true;
+};
+
+const closeEditApoioModal = () => {
+    if (!confirmDiscard(editApoioForm.isDirty)) return;
+    showEditApoioModal.value = false;
 };
 
 const submitEditApoio = () => {
@@ -275,7 +302,7 @@ const deleteApoio = (apoio) => {
     if (confirm(`Deseja realmente remover a equipe de apoio '${apoio.nome}' e toda a sua aba do PEI?`)) {
         router.delete(route('peis.destroy-apoio', [props.pei.id, apoio.id]), {
             onSuccess: () => {
-                activeTab.value = 'ficha_inicial';
+                activeTab.value = 'ficha_aluno';
             },
         });
     }
@@ -323,7 +350,13 @@ const openApoioTrimestreModal = (apoio, trimestreNum) => {
         });
     }
 
+    apoioTrimestreForm.defaults();
     showApoioTrimestreModal.value = true;
+};
+
+const closeApoioTrimestreModal = () => {
+    if (!confirmDiscard(apoioTrimestreForm.isDirty)) return;
+    showApoioTrimestreModal.value = false;
 };
 
 const addApoioTriResponsavel = () => {
@@ -455,7 +488,13 @@ const openDisciplinaTrimestreModal = (disciplina, trimestreNum) => {
         };
     });
 
+    disciplinaTrimestreForm.defaults();
     showDisciplinaTrimestreModal.value = true;
+};
+
+const closeDisciplinaTrimestreModal = () => {
+    if (!confirmDiscard(disciplinaTrimestreForm.isDirty)) return;
+    showDisciplinaTrimestreModal.value = false;
 };
 
 const addPlanejamentoRow = () => {
@@ -466,13 +505,43 @@ const removePlanejamentoRow = (index) => {
     disciplinaTrimestreForm.planejamentos.splice(index, 1);
 };
 
+// modais de impressão de relatórios
+const showRelatorioPeiModal = ref(false);
+const showImprimirDisciplinaPrompt = ref(false);
+const disciplinaRecemSalva = ref(null);
+
 const submitDisciplinaTrimestreForm = () => {
+    const discSalva = currentDisciplina.value
+        ? {
+            id: currentDisciplina.value.id,
+            codigo: currentDisciplina.value.codigo,
+            nome: currentDisciplina.value.nome,
+            trimestre: disciplinaTrimestreForm.trimestre,
+        }
+        : null;
+
     disciplinaTrimestreForm.post(route('peis.update-disciplina-trimestre', [props.pei.id, currentDisciplina.value.id]), {
+        preserveScroll: true,
+        preserveState: true,
         onSuccess: () => {
             showDisciplinaTrimestreModal.value = false;
+            if (discSalva) {
+                disciplinaRecemSalva.value = discSalva;
+                showImprimirDisciplinaPrompt.value = true;
+            }
         },
     });
 };
+
+useUnsavedChanges(() => (
+    (showFichaAlunoModal.value && fichaAlunoForm.isDirty) ||
+    (showFichaPeiModal.value && fichaPeiForm.isDirty) ||
+    (showNaiModal.value && naiForm.isDirty) ||
+    (showEditApoioModal.value && editApoioForm.isDirty) ||
+    (showApoioTrimestreModal.value && apoioTrimestreForm.isDirty) ||
+    (showDisciplinaTrimestreModal.value && disciplinaTrimestreForm.isDirty) ||
+    novoApoioForm.isDirty
+));
 </script>
 
 <template>
@@ -490,6 +559,16 @@ const submitDisciplinaTrimestreForm = () => {
                     </h1>
                 </div>
                 <div class="flex items-center space-x-2">
+                    <button
+                        type="button"
+                        @click="showRelatorioPeiModal = true"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#006633] hover:bg-emerald-800 dark:bg-emerald-700 dark:hover:bg-emerald-600 text-white text-xs font-semibold rounded-sm shadow-xs transition-colors cursor-pointer"
+                    >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        <span>Imprimir Relatório</span>
+                    </button>
                     <Link
                         :href="route('peis.index')"
                         class="inline-flex items-center px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 text-xs font-semibold rounded-sm transition-colors"
@@ -1646,7 +1725,7 @@ const submitDisciplinaTrimestreForm = () => {
                     </h3>
                     <button
                         type="button"
-                        @click="showEditApoioModal = false"
+                        @click="closeEditApoioModal"
                         class="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 text-lg leading-none"
                     >
                         &times;
@@ -1669,7 +1748,7 @@ const submitDisciplinaTrimestreForm = () => {
                     <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-zinc-700">
                         <button
                             type="button"
-                            @click="showEditApoioModal = false"
+                            @click="closeEditApoioModal"
                             class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 text-xs font-semibold rounded-sm border border-slate-300 dark:border-zinc-600"
                         >
                             Cancelar
@@ -1705,7 +1784,7 @@ const submitDisciplinaTrimestreForm = () => {
                     </div>
                     <button
                         type="button"
-                        @click="showApoioTrimestreModal = false"
+                        @click="closeApoioTrimestreModal"
                         class="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 text-lg leading-none"
                     >
                         &times;
@@ -1884,7 +1963,7 @@ const submitDisciplinaTrimestreForm = () => {
                     <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-zinc-700">
                         <button
                             type="button"
-                            @click="showApoioTrimestreModal = false"
+                            @click="closeApoioTrimestreModal"
                             class="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 text-xs font-semibold rounded-sm border border-slate-300 dark:border-zinc-600"
                         >
                             Cancelar
@@ -1920,7 +1999,7 @@ const submitDisciplinaTrimestreForm = () => {
                     </div>
                     <button
                         type="button"
-                        @click="showNaiModal = false"
+                        @click="closeNaiModal"
                         class="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 text-lg leading-none"
                     >
                         &times;
@@ -2107,7 +2186,7 @@ const submitDisciplinaTrimestreForm = () => {
                     <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-zinc-700">
                         <button
                             type="button"
-                            @click="showNaiModal = false"
+                            @click="closeNaiModal"
                             class="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 text-xs font-semibold rounded-sm border border-slate-300 dark:border-zinc-600"
                         >
                             Cancelar
@@ -2144,7 +2223,7 @@ const submitDisciplinaTrimestreForm = () => {
                     </div>
                     <button
                         type="button"
-                        @click="showDisciplinaTrimestreModal = false"
+                        @click="closeDisciplinaTrimestreModal"
                         class="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 text-xl leading-none"
                     >
                         &times;
@@ -2194,7 +2273,7 @@ const submitDisciplinaTrimestreForm = () => {
                                     </button>
                                 </div>
 
-                                <!-- Objetivos e Conteúdos -->
+                                <!-- objetivos e conteúdos -->
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label class="block text-[11px] font-semibold text-slate-700 dark:text-zinc-300 uppercase mb-1">
@@ -2223,7 +2302,7 @@ const submitDisciplinaTrimestreForm = () => {
                                     </div>
                                 </div>
 
-                                <!-- Metodologias / Estratégias / Recursos -->
+                                <!-- metodologias / estratégias / recursos -->
                                 <div class="p-3.5 bg-white dark:bg-zinc-800 rounded-sm border border-slate-200 dark:border-zinc-700 space-y-4">
                                     <div class="border-b border-slate-200 dark:border-zinc-700 pb-2">
                                         <h5 class="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
@@ -2234,7 +2313,7 @@ const submitDisciplinaTrimestreForm = () => {
                                         </p>
                                     </div>
 
-                                    <!-- 1 - Estratégias de ensino -->
+                                    <!-- 1 - estratégias de ensino -->
                                     <div class="space-y-2">
                                         <div class="flex items-center justify-between">
                                             <span class="text-xs font-bold text-slate-800 dark:text-zinc-200">
@@ -2273,7 +2352,7 @@ const submitDisciplinaTrimestreForm = () => {
                                         </div>
                                     </div>
 
-                                    <!-- 2 - Estratégias e condições de avaliação -->
+                                    <!-- 2 - estratégias e condições de avaliação -->
                                     <div class="space-y-2 pt-3 border-t border-slate-200 dark:border-zinc-700/60">
                                         <div class="flex items-center justify-between">
                                             <span class="text-xs font-bold text-slate-800 dark:text-zinc-200">
@@ -2313,7 +2392,7 @@ const submitDisciplinaTrimestreForm = () => {
                                     </div>
                                 </div>
 
-                                <!-- Tempo (prazo de realização de trabalho) -->
+                                <!-- tempo (prazo de realização de trabalho) -->
                                 <div class="p-3.5 bg-white dark:bg-zinc-800 rounded-sm border border-slate-200 dark:border-zinc-700 space-y-2">
                                     <label class="block text-[11px] font-semibold text-slate-700 dark:text-zinc-300 uppercase">
                                         Tempo <span class="text-slate-400 font-normal lowercase">(prazo de realização de trabalho?)</span> <span class="text-red-500">*</span>
@@ -2345,7 +2424,7 @@ const submitDisciplinaTrimestreForm = () => {
                                     </div>
                                 </div>
 
-                                <!-- Avaliação de desempenho / Resultados -->
+                                <!-- avaliação de desempenho / resultados -->
                                 <div class="p-3.5 bg-white dark:bg-zinc-800 rounded-sm border border-slate-200 dark:border-zinc-700 space-y-3">
                                     <div class="flex items-baseline justify-between border-b border-slate-200 dark:border-zinc-700 pb-2">
                                         <div>
@@ -2389,7 +2468,7 @@ const submitDisciplinaTrimestreForm = () => {
                                     </div>
                                 </div>
 
-                                <!-- Sugestões para melhor aproveitamento -->
+                                <!-- sugestões para melhor aproveitamento -->
                                 <div>
                                     <label class="block text-[11px] font-semibold text-slate-700 dark:text-zinc-300 uppercase mb-1">
                                         Sugestões para melhor aproveitamento do discente
@@ -2518,7 +2597,7 @@ const submitDisciplinaTrimestreForm = () => {
                     <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-zinc-700">
                         <button
                             type="button"
-                            @click="showDisciplinaTrimestreModal = false"
+                            @click="closeDisciplinaTrimestreModal"
                             class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 text-xs font-semibold rounded-sm border border-slate-300 dark:border-zinc-600"
                         >
                             Cancelar
@@ -2554,7 +2633,7 @@ const submitDisciplinaTrimestreForm = () => {
                     </div>
                     <button
                         type="button"
-                        @click="showFichaAlunoModal = false"
+                        @click="closeFichaAlunoModal"
                         class="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 text-xl leading-none"
                     >
                         &times;
@@ -2643,7 +2722,7 @@ const submitDisciplinaTrimestreForm = () => {
                     <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-zinc-700">
                         <button
                             type="button"
-                            @click="showFichaAlunoModal = false"
+                            @click="closeFichaAlunoModal"
                             class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 text-xs font-semibold rounded-sm border border-slate-300 dark:border-zinc-600"
                         >
                             Cancelar
@@ -2679,7 +2758,7 @@ const submitDisciplinaTrimestreForm = () => {
                     </div>
                     <button
                         type="button"
-                        @click="showFichaPeiModal = false"
+                        @click="closeFichaPeiModal"
                         class="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 text-xl leading-none"
                     >
                         &times;
@@ -2887,7 +2966,7 @@ const submitDisciplinaTrimestreForm = () => {
                     <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-zinc-700">
                         <button
                             type="button"
-                            @click="showFichaPeiModal = false"
+                            @click="closeFichaPeiModal"
                             class="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 text-xs font-semibold rounded-sm border border-slate-300 dark:border-zinc-600"
                         >
                             Cancelar
@@ -2903,5 +2982,25 @@ const submitDisciplinaTrimestreForm = () => {
                 </form>
             </div>
         </div>
+
+        <!-- modal de impressão do relatório completo / seletivo do pei -->
+        <RelatorioPeiModal
+            :show="showRelatorioPeiModal"
+            :pei="pei"
+            @close="showRelatorioPeiModal = false"
+        />
+
+        <!-- prompt de impressão após preenchimento de disciplina -->
+        <ImprimirDisciplinaPromptModal
+            :show="showImprimirDisciplinaPrompt"
+            :pei-id="pei.id"
+            :pei-codigo="pei.codigo"
+            :aluno-nome="pei.aluno?.nome || ''"
+            :disciplina-id="disciplinaRecemSalva?.id"
+            :disciplina-codigo="disciplinaRecemSalva?.codigo || ''"
+            :disciplina-nome="disciplinaRecemSalva?.nome || ''"
+            :trimestre="disciplinaRecemSalva?.trimestre || 1"
+            @close="showImprimirDisciplinaPrompt = false"
+        />
     </AuthenticatedLayout>
 </template>

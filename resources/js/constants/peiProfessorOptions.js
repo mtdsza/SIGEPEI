@@ -1,5 +1,5 @@
 /**
- * Opções padronizadas pelo NAI para o preenchimento do PEI pelo professor.
+ * opções padronizadas pelo nai para o preenchimento do pei pelo professor.
  */
 
 export const ESTRATEGIAS_ENSINO_OPCOES = [

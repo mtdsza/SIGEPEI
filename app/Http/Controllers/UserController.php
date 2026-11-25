@@ -6,7 +6,9 @@ use App\Models\User;
 use App\Services\AuditService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -179,7 +181,17 @@ class UserController extends Controller
         }
 
         $usuario->is_active = !$usuario->is_active;
+        if (!$usuario->is_active) {
+            $usuario->remember_token = Str::random(60);
+        }
         $usuario->save();
+
+        // encerra sessões ativas no banco quando o usuário for inativado
+        if (!$usuario->is_active && config('session.driver') === 'database') {
+            DB::table(config('session.table', 'sessions'))
+                ->where('user_id', $usuario->id)
+                ->delete();
+        }
 
         $statusMsg = $usuario->is_active ? 'reativado' : 'inativado';
         $acao = $usuario->is_active ? 'Reativação' : 'Inativação';

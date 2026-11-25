@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     deficiencia: {
@@ -13,6 +14,8 @@ const form = useForm({
     codigo: props.deficiencia.codigo,
     nome: props.deficiencia.nome,
 });
+
+useUnsavedChanges(form);
 
 const submit = () => {
     form.put(route('deficiencias.update', props.deficiencia.id));

@@ -74,8 +74,13 @@ class Aluno extends Model
      */
     public function turmaAtual()
     {
+        if ($this->relationLoaded('turmas')) {
+            return $this->turmas->first(fn ($t) => (bool) ($t->pivot->is_atual ?? false))
+                ?? $this->turmas->sortByDesc(fn ($t) => (int) ($t->pivot->ano_letivo ?? 0))->first();
+        }
+
         return $this->turmas()->wherePivot('is_atual', true)->first()
-            ?? $this->turmas()->orderByPivot('ano_letivo', 'desc')->first();
+            ?? $this->turmas()->first();
     }
 
     /**

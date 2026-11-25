@@ -1,11 +1,14 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const form = useForm({
     codigo: '',
     nome: '',
 });
+
+useUnsavedChanges(form);
 
 const submit = () => {
     form.post(route('disciplinas.store'));

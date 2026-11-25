@@ -30,8 +30,8 @@ const filteredTurmas = computed(() => {
 
     const query = searchQuery.value.toLowerCase();
     return list.filter(item =>
-        item.nome.toLowerCase().includes(query) ||
-        item.ano.toString().includes(query)
+        (item.nome ?? '').toLowerCase().includes(query) ||
+        String(item.ano ?? '').includes(query)
     );
 });
 

@@ -23,6 +23,7 @@ use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -185,75 +186,90 @@ class PeiController extends Controller
             'intervencoes.*.responsavel' => ['nullable', 'string'],
         ]);
 
-        $ano = $validated['ano_letivo'];
-        $countAno = Pei::where('ano_letivo', $ano)->count() + 1;
-        $codigo = sprintf('PEI-%d-%03d', $ano, $countAno);
+        $ano = (int) $validated['ano_letivo'];
 
-        $pei = Pei::create([
-            'codigo' => $codigo,
-            'aluno_id' => $validated['aluno_id'],
-            'turma_id' => $validated['turma_id'] ?? null,
-            'ano_letivo' => $ano,
-            'data_elaboracao' => $validated['data_elaboracao'],
-            'diagnostico' => $validated['diagnostico'] ?? null,
-            'tempo_livre' => $validated['tempo_livre'] ?? null,
-            'pratica_esporte' => $validated['pratica_esporte'] ?? null,
-            'caracteristicas_discente' => $validated['caracteristicas_discente'] ?? null,
-            'organizacao_e_prazos' => $validated['organizacao_e_prazos'] ?? null,
-            'dificuldade_interacao_social' => $validated['dificuldade_interacao_social'] ?? null,
-            'sugestoes_recursos_estrategias' => $validated['sugestoes_recursos_estrategias'] ?? null,
-            'status' => 'Ativo',
-            'is_active' => true,
-        ]);
-
-        if (!empty($validated['responsaveis'])) {
-            foreach ($validated['responsaveis'] as $resp) {
-                if (!empty($resp['user_id']) || !empty($resp['nome_externo'])) {
-                    PeiResponsavel::create([
-                        'pei_id' => $pei->id,
-                        'user_id' => $resp['user_id'] ?? null,
-                        'nome_externo' => $resp['nome_externo'] ?? null,
-                        'secao' => 'ficha_inicial',
-                    ]);
+        $pei = DB::transaction(function () use ($validated, $ano) {
+            // calcula o próximo número sequencial com base no maior sufixo existente no ano letivo
+            $codigosAno = Pei::where('ano_letivo', $ano)->pluck('codigo');
+            $maiorSequencial = 0;
+            foreach ($codigosAno as $cod) {
+                if (preg_match('/^PEI-\d+-(\d+)$/', (string) $cod, $m)) {
+                    $maiorSequencial = max($maiorSequencial, (int) $m[1]);
                 }
             }
-        }
+            $proximoNumero = max($maiorSequencial, $codigosAno->count()) + 1;
+            $codigo = sprintf('PEI-%d-%03d', $ano, $proximoNumero);
 
-        $mapTipos = [
-            'habilidade' => $validated['habilidades'] ?? [],
-            'dificuldade' => $validated['dificuldades'] ?? [],
-            'dificultador_interno' => $validated['dificultadores_internos'] ?? [],
-            'facilitador_interno' => $validated['facilitadores_internos'] ?? [],
-            'dificultador_externo' => $validated['dificultadores_externos'] ?? [],
-            'facilitador_externo' => $validated['facilitadores_externos'] ?? [],
-        ];
+            $pei = Pei::create([
+                'codigo' => $codigo,
+                'aluno_id' => $validated['aluno_id'],
+                'turma_id' => $validated['turma_id'] ?? null,
+                'ano_letivo' => $ano,
+                'data_elaboracao' => $validated['data_elaboracao'],
+                'diagnostico' => $validated['diagnostico'] ?? null,
+                'tempo_livre' => $validated['tempo_livre'] ?? null,
+                'pratica_esporte' => $validated['pratica_esporte'] ?? null,
+                'caracteristicas_discente' => $validated['caracteristicas_discente'] ?? null,
+                'organizacao_e_prazos' => $validated['organizacao_e_prazos'] ?? null,
+                'dificuldade_interacao_social' => $validated['dificuldade_interacao_social'] ?? null,
+                'sugestoes_recursos_estrategias' => $validated['sugestoes_recursos_estrategias'] ?? null,
+                'status' => 'Ativo',
+                'is_active' => true,
+            ]);
 
-        foreach ($mapTipos as $tipo => $itens) {
-            foreach ($itens as $idx => $texto) {
-                if (filled($texto)) {
-                    PeiIdentificacao::create([
-                        'pei_id' => $pei->id,
-                        'tipo' => $tipo,
-                        'descricao' => trim($texto),
-                        'ordem' => $idx,
-                    ]);
+            if (!empty($validated['responsaveis'])) {
+                foreach ($validated['responsaveis'] as $resp) {
+                    $userId = !empty($resp['user_id']) ? $resp['user_id'] : null;
+                    $nomeExterno = $userId ? null : (!empty($resp['nome_externo']) ? $resp['nome_externo'] : null);
+                    if ($userId !== null || $nomeExterno !== null) {
+                        PeiResponsavel::create([
+                            'pei_id' => $pei->id,
+                            'user_id' => $userId,
+                            'nome_externo' => $nomeExterno,
+                            'secao' => 'ficha_inicial',
+                        ]);
+                    }
                 }
             }
-        }
 
-        if (!empty($validated['intervencoes'])) {
-            foreach ($validated['intervencoes'] as $idx => $interv) {
-                if (filled($interv['demanda'] ?? null) || filled($interv['encaminhamento_estrategia'] ?? null)) {
-                    PeiIntervencao::create([
-                        'pei_id' => $pei->id,
-                        'demanda' => $interv['demanda'] ?? '',
-                        'encaminhamento_estrategia' => $interv['encaminhamento_estrategia'] ?? '',
-                        'responsavel' => $interv['responsavel'] ?? '',
-                        'ordem' => $idx,
-                    ]);
+            $mapTipos = [
+                'habilidade' => $validated['habilidades'] ?? [],
+                'dificuldade' => $validated['dificuldades'] ?? [],
+                'dificultador_interno' => $validated['dificultadores_internos'] ?? [],
+                'facilitador_interno' => $validated['facilitadores_internos'] ?? [],
+                'dificultador_externo' => $validated['dificultadores_externos'] ?? [],
+                'facilitador_externo' => $validated['facilitadores_externos'] ?? [],
+            ];
+
+            foreach ($mapTipos as $tipo => $itens) {
+                foreach ($itens as $idx => $texto) {
+                    if (filled($texto)) {
+                        PeiIdentificacao::create([
+                            'pei_id' => $pei->id,
+                            'tipo' => $tipo,
+                            'descricao' => trim($texto),
+                            'ordem' => $idx,
+                        ]);
+                    }
                 }
             }
-        }
+
+            if (!empty($validated['intervencoes'])) {
+                foreach ($validated['intervencoes'] as $idx => $interv) {
+                    if (filled($interv['demanda'] ?? null) || filled($interv['encaminhamento_estrategia'] ?? null)) {
+                        PeiIntervencao::create([
+                            'pei_id' => $pei->id,
+                            'demanda' => $interv['demanda'] ?? '',
+                            'encaminhamento_estrategia' => $interv['encaminhamento_estrategia'] ?? '',
+                            'responsavel' => $interv['responsavel'] ?? '',
+                            'ordem' => $idx,
+                        ]);
+                    }
+                }
+            }
+
+            return $pei;
+        });
 
         // registra a criação do pei na trilha de auditoria
         AuditService::log(
@@ -567,11 +583,17 @@ class PeiController extends Controller
             'responsaveis.*.user_id' => ['nullable', 'exists:users,id'],
             'responsaveis.*.nome_externo' => ['nullable', 'string', 'max:255'],
             'habilidades' => ['nullable', 'array'],
+            'habilidades.*' => ['nullable', 'string'],
             'dificuldades' => ['nullable', 'array'],
+            'dificuldades.*' => ['nullable', 'string'],
             'dificultadores_internos' => ['nullable', 'array'],
+            'dificultadores_internos.*' => ['nullable', 'string'],
             'facilitadores_internos' => ['nullable', 'array'],
+            'facilitadores_internos.*' => ['nullable', 'string'],
             'dificultadores_externos' => ['nullable', 'array'],
+            'dificultadores_externos.*' => ['nullable', 'string'],
             'facilitadores_externos' => ['nullable', 'array'],
+            'facilitadores_externos.*' => ['nullable', 'string'],
             'intervencoes' => ['nullable', 'array'],
             'intervencoes.*.demanda' => ['nullable', 'string'],
             'intervencoes.*.encaminhamento_estrategia' => ['nullable', 'string'],
@@ -590,80 +612,80 @@ class PeiController extends Controller
             'intervencoes' => $pei->intervencoes()->get()->map(fn($i) => "{$i->demanda} | {$i->encaminhamento_estrategia} | {$i->responsavel}")->values()->toArray(),
         ];
 
-        $pei->update([
-            'diagnostico' => $validated['diagnostico'] ?? null,
-        ]);
+        DB::transaction(function () use ($pei, $validated) {
+            $pei->update([
+                'diagnostico' => $validated['diagnostico'] ?? null,
+            ]);
 
-        // atualiza os responsáveis da ficha do pei
-        $pei->responsaveis()->where('secao', 'ficha_inicial')->delete();
-        if (!empty($validated['responsaveis'])) {
-            foreach ($validated['responsaveis'] as $resp) {
-                if (!empty($resp['user_id']) || !empty($resp['nome_externo'])) {
+            // atualiza os responsáveis da ficha do pei
+            $pei->responsaveis()->where('secao', 'ficha_inicial')->delete();
+            if (!empty($validated['responsaveis'])) {
+                foreach ($validated['responsaveis'] as $resp) {
                     $isUser = ($resp['tipo'] ?? 'usuario') === 'usuario';
-                    $pei->responsaveis()->create([
-                        'user_id' => $isUser ? ($resp['user_id'] ?: null) : null,
-                        'nome_externo' => !$isUser ? ($resp['nome_externo'] ?: null) : null,
-                        'secao' => 'ficha_inicial',
-                    ]);
+                    $userId = $isUser ? (!empty($resp['user_id']) ? $resp['user_id'] : null) : null;
+                    $nomeExterno = !$isUser ? (!empty($resp['nome_externo']) ? $resp['nome_externo'] : null) : null;
+
+                    if ($userId !== null || $nomeExterno !== null) {
+                        $pei->responsaveis()->create([
+                            'user_id' => $userId,
+                            'nome_externo' => $nomeExterno,
+                            'secao' => 'ficha_inicial',
+                        ]);
+                    }
                 }
             }
-        }
 
-        // atualiza as identificações de habilidades e dificuldades
-        $pei->identificacoes()->delete();
-        $tipos = [
-            'habilidade' => 'habilidades',
-            'dificuldade' => 'dificuldades',
-            'dificultador_interno' => 'dificultadores_internos',
-            'facilitador_interno' => 'facilitadores_internos',
-            'dificultador_externo' => 'dificultadores_externos',
-            'facilitador_externo' => 'facilitadores_externos',
-        ];
+            // atualiza as identificações de habilidades e dificuldades
+            $pei->identificacoes()->delete();
+            $tipos = [
+                'habilidade' => 'habilidades',
+                'dificuldade' => 'dificuldades',
+                'dificultador_interno' => 'dificultadores_internos',
+                'facilitador_interno' => 'facilitadores_internos',
+                'dificultador_externo' => 'dificultadores_externos',
+                'facilitador_externo' => 'facilitadores_externos',
+            ];
 
-        foreach ($tipos as $tipoEnum => $inputKey) {
-            if (!empty($validated[$inputKey])) {
-                foreach ($validated[$inputKey] as $index => $texto) {
-                    if (filled($texto)) {
-                        $pei->identificacoes()->create([
-                            'tipo' => $tipoEnum,
-                            'descricao' => trim($texto),
+            foreach ($tipos as $tipoEnum => $inputKey) {
+                if (!empty($validated[$inputKey])) {
+                    foreach ($validated[$inputKey] as $index => $texto) {
+                        if (filled($texto)) {
+                            $pei->identificacoes()->create([
+                                'tipo' => $tipoEnum,
+                                'descricao' => trim($texto),
+                                'ordem' => $index,
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            // atualiza as intervenções pedagógicas propostas
+            $pei->intervencoes()->delete();
+            if (!empty($validated['intervencoes'])) {
+                foreach ($validated['intervencoes'] as $index => $int) {
+                    if (filled($int['demanda'] ?? null) || filled($int['encaminhamento_estrategia'] ?? null)) {
+                        $pei->intervencoes()->create([
+                            'demanda' => $int['demanda'] ?? '',
+                            'encaminhamento_estrategia' => $int['encaminhamento_estrategia'] ?? '',
+                            'responsavel' => $int['responsavel'] ?? '',
                             'ordem' => $index,
                         ]);
                     }
                 }
             }
-        }
-
-        // atualiza as intervenções pedagógicas propostas
-        $pei->intervencoes()->delete();
-        if (!empty($validated['intervencoes'])) {
-            foreach ($validated['intervencoes'] as $index => $int) {
-                if (filled($int['demanda'] ?? null) || filled($int['encaminhamento_estrategia'] ?? null)) {
-                    $pei->intervencoes()->create([
-                        'demanda' => $int['demanda'] ?? '',
-                        'encaminhamento_estrategia' => $int['encaminhamento_estrategia'] ?? '',
-                        'responsavel' => $int['responsavel'] ?? '',
-                        'ordem' => $index,
-                    ]);
-                }
-            }
-        }
+        });
 
         $dadosNovos = [
             'diagnostico' => $validated['diagnostico'] ?? null,
-            'responsaveis' => array_values(array_filter(array_map(function($r) {
-                if (!empty($r['user_id'])) {
-                    return User::find($r['user_id'])?->name;
-                }
-                return $r['nome_externo'] ?? null;
-            }, $validated['responsaveis'] ?? []))),
-            'habilidades' => array_values(array_filter($validated['habilidades'] ?? [])),
-            'dificuldades' => array_values(array_filter($validated['dificuldades'] ?? [])),
-            'dificultadores_internos' => array_values(array_filter($validated['dificultadores_internos'] ?? [])),
-            'facilitadores_internos' => array_values(array_filter($validated['facilitadores_internos'] ?? [])),
-            'dificultadores_externos' => array_values(array_filter($validated['dificultadores_externos'] ?? [])),
-            'facilitadores_externos' => array_values(array_filter($validated['facilitadores_externos'] ?? [])),
-            'intervencoes' => array_values(array_map(fn($i) => "{$i['demanda']} | {$i['encaminhamento_estrategia']} | {$i['responsavel']}", $validated['intervencoes'] ?? [])),
+            'responsaveis' => $pei->responsaveis()->where('secao', 'ficha_inicial')->get()->map(fn($r) => $r->user?->name ?? $r->nome_externo)->values()->toArray(),
+            'habilidades' => $pei->identificacoes()->where('tipo', 'habilidade')->pluck('descricao')->values()->toArray(),
+            'dificuldades' => $pei->identificacoes()->where('tipo', 'dificuldade')->pluck('descricao')->values()->toArray(),
+            'dificultadores_internos' => $pei->identificacoes()->where('tipo', 'dificultador_interno')->pluck('descricao')->values()->toArray(),
+            'facilitadores_internos' => $pei->identificacoes()->where('tipo', 'facilitador_interno')->pluck('descricao')->values()->toArray(),
+            'dificultadores_externos' => $pei->identificacoes()->where('tipo', 'dificultador_externo')->pluck('descricao')->values()->toArray(),
+            'facilitadores_externos' => $pei->identificacoes()->where('tipo', 'facilitador_externo')->pluck('descricao')->values()->toArray(),
+            'intervencoes' => $pei->intervencoes()->get()->map(fn($i) => "{$i->demanda} | {$i->encaminhamento_estrategia} | {$i->responsavel}")->values()->toArray(),
         ];
 
         // registra a atualização da ficha do pei na trilha de auditoria
@@ -705,35 +727,39 @@ class PeiController extends Controller
             'atividades' => $pei->naiAtividades()->where('trimestre', $trimestre)->get()->map(fn($a) => "Objetivos: {$a->objetivos} | Recursos: {$a->recursos_acoes} | Tempo: {$a->tempo}")->values()->toArray(),
         ];
 
-        PeiResponsavel::where('pei_id', $pei->id)->where('secao', $secao)->delete();
-        if (!empty($validated['responsaveis'])) {
-            foreach ($validated['responsaveis'] as $resp) {
-                if (!empty($resp['user_id']) || !empty($resp['nome_externo'])) {
-                    PeiResponsavel::create([
+        DB::transaction(function () use ($pei, $secao, $trimestre, $validated) {
+            PeiResponsavel::where('pei_id', $pei->id)->where('secao', $secao)->delete();
+            if (!empty($validated['responsaveis'])) {
+                foreach ($validated['responsaveis'] as $resp) {
+                    $userId = !empty($resp['user_id']) ? $resp['user_id'] : null;
+                    $nomeExterno = $userId ? null : (!empty($resp['nome_externo']) ? $resp['nome_externo'] : null);
+                    if ($userId !== null || $nomeExterno !== null) {
+                        PeiResponsavel::create([
+                            'pei_id' => $pei->id,
+                            'user_id' => $userId,
+                            'nome_externo' => $nomeExterno,
+                            'secao' => $secao,
+                        ]);
+                    }
+                }
+            }
+
+            PeiNaiAtividade::where('pei_id', $pei->id)->where('trimestre', $trimestre)->delete();
+            if (!empty($validated['atividades'])) {
+                foreach ($validated['atividades'] as $idx => $atv) {
+                    PeiNaiAtividade::create([
                         'pei_id' => $pei->id,
-                        'user_id' => $resp['user_id'] ?? null,
-                        'nome_externo' => $resp['nome_externo'] ?? null,
-                        'secao' => $secao,
+                        'trimestre' => $trimestre,
+                        'objetivos' => $atv['objetivos'],
+                        'recursos_acoes' => $atv['recursos_acoes'],
+                        'tempo' => $atv['tempo'],
+                        'avaliacao_resultados' => $atv['avaliacao_resultados'] ?? null,
+                        'sugestoes_aproveitamento' => $atv['sugestoes_aproveitamento'] ?? null,
+                        'ordem' => $idx,
                     ]);
                 }
             }
-        }
-
-        PeiNaiAtividade::where('pei_id', $pei->id)->where('trimestre', $trimestre)->delete();
-        if (!empty($validated['atividades'])) {
-            foreach ($validated['atividades'] as $idx => $atv) {
-                PeiNaiAtividade::create([
-                    'pei_id' => $pei->id,
-                    'trimestre' => $trimestre,
-                    'objetivos' => $atv['objetivos'],
-                    'recursos_acoes' => $atv['recursos_acoes'],
-                    'tempo' => $atv['tempo'],
-                    'avaliacao_resultados' => $atv['avaliacao_resultados'] ?? null,
-                    'sugestoes_aproveitamento' => $atv['sugestoes_aproveitamento'] ?? null,
-                    'ordem' => $idx,
-                ]);
-            }
-        }
+        });
 
         $dadosNovos = [
             'trimestre' => $trimestre,
@@ -791,12 +817,23 @@ class PeiController extends Controller
     public function updateApoio(Request $request, Pei $pei, PeiApoio $apoio): RedirectResponse
     {
         $this->ensureAdminOrNai();
+        abort_if((int) $apoio->pei_id !== (int) $pei->id, 404);
 
         $validated = $request->validate([
             'nome' => ['required', 'string', 'max:255'],
         ]);
 
+        $nomeAnterior = $apoio->nome;
         $apoio->update($validated);
+
+        AuditService::log(
+            'PEIs',
+            'Atualização',
+            "Renomeou a Equipe de Apoio '{$nomeAnterior}' para '{$apoio->nome}' no PEI {$pei->codigo}",
+            $pei,
+            ['equipe_apoio' => $nomeAnterior],
+            ['equipe_apoio' => $apoio->nome]
+        );
 
         return redirect()->route('peis.show', $pei->id)->with('success', "Nome da equipe atualizado para '{$apoio->nome}'.");
     }
@@ -804,10 +841,13 @@ class PeiController extends Controller
     // atualiza responsáveis e atividades da equipe de apoio no trimestre informado
     public function updateApoioTrimestre(Request $request, Pei $pei, PeiApoio $apoio): RedirectResponse
     {
+        abort_if((int) $apoio->pei_id !== (int) $pei->id, 404);
+
         $user = Auth::user();
         $trimestre = (int) $request->input('trimestre', 1);
+        $isAdminOrNai = (bool) ($user && ($user->is_admin || $user->cargo === 'NAI'));
         $isResponsavel = $apoio->responsaveis()->where('trimestre', $trimestre)->where('user_id', $user?->id)->exists();
-        if (!$user || (!$user->is_admin && $user->cargo !== 'NAI' && !$isResponsavel)) {
+        if (!$user || (!$isAdminOrNai && !$isResponsavel)) {
             abort(403, 'Você não possui permissão para editar esta equipe de apoio.');
         }
 
@@ -833,47 +873,48 @@ class PeiController extends Controller
             'atividades' => $apoio->atividades()->where('trimestre', $trimestre)->get()->map(fn($a) => "Objetivos: {$a->objetivos} | Recursos: {$a->recursos_acoes} | Tempo: {$a->tempo}")->values()->toArray(),
         ];
 
-        // atualiza a listagem de responsáveis no trimestre
-        PeiApoioResponsavel::where('pei_apoio_id', $apoio->id)->where('trimestre', $trimestre)->delete();
-        if (!empty($validated['responsaveis'])) {
-            foreach ($validated['responsaveis'] as $resp) {
-                if (!empty($resp['user_id']) || !empty($resp['nome_externo'])) {
-                    PeiApoioResponsavel::create([
+        DB::transaction(function () use ($apoio, $trimestre, $validated, $isAdminOrNai) {
+            // apenas administradores e equipe do nai podem alterar a lista de responsáveis da equipe de apoio
+            if ($isAdminOrNai) {
+                PeiApoioResponsavel::where('pei_apoio_id', $apoio->id)->where('trimestre', $trimestre)->delete();
+                if (!empty($validated['responsaveis'])) {
+                    foreach ($validated['responsaveis'] as $resp) {
+                        $userId = !empty($resp['user_id']) ? $resp['user_id'] : null;
+                        $nomeExterno = $userId ? null : (!empty($resp['nome_externo']) ? $resp['nome_externo'] : null);
+                        if ($userId !== null || $nomeExterno !== null) {
+                            PeiApoioResponsavel::create([
+                                'pei_apoio_id' => $apoio->id,
+                                'trimestre' => $trimestre,
+                                'user_id' => $userId,
+                                'nome_externo' => $nomeExterno,
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            // atualiza as atividades e resultados da equipe no trimestre
+            PeiApoioAtividade::where('pei_apoio_id', $apoio->id)->where('trimestre', $trimestre)->delete();
+            if (!empty($validated['atividades'])) {
+                foreach ($validated['atividades'] as $idx => $atv) {
+                    PeiApoioAtividade::create([
                         'pei_apoio_id' => $apoio->id,
                         'trimestre' => $trimestre,
-                        'user_id' => $resp['user_id'] ?? null,
-                        'nome_externo' => $resp['nome_externo'] ?? null,
+                        'objetivos' => $atv['objetivos'],
+                        'recursos_acoes' => $atv['recursos_acoes'],
+                        'tempo' => $atv['tempo'],
+                        'avaliacao_resultados' => $atv['avaliacao_resultados'] ?? null,
+                        'sugestoes_aproveitamento' => $atv['sugestoes_aproveitamento'] ?? null,
+                        'ordem' => $idx,
                     ]);
                 }
             }
-        }
-
-        // atualiza as atividades e resultados da equipe no trimestre
-        PeiApoioAtividade::where('pei_apoio_id', $apoio->id)->where('trimestre', $trimestre)->delete();
-        if (!empty($validated['atividades'])) {
-            foreach ($validated['atividades'] as $idx => $atv) {
-                PeiApoioAtividade::create([
-                    'pei_apoio_id' => $apoio->id,
-                    'trimestre' => $trimestre,
-                    'objetivos' => $atv['objetivos'],
-                    'recursos_acoes' => $atv['recursos_acoes'],
-                    'tempo' => $atv['tempo'],
-                    'avaliacao_resultados' => $atv['avaliacao_resultados'] ?? null,
-                    'sugestoes_aproveitamento' => $atv['sugestoes_aproveitamento'] ?? null,
-                    'ordem' => $idx,
-                ]);
-            }
-        }
+        });
 
         $dadosNovos = [
             'equipe' => $apoio->nome,
             'trimestre' => $trimestre,
-            'responsaveis' => array_values(array_filter(array_map(function($r) {
-                if (!empty($r['user_id'])) {
-                    return User::find($r['user_id'])?->name;
-                }
-                return $r['nome_externo'] ?? null;
-            }, $validated['responsaveis'] ?? []))),
+            'responsaveis' => $apoio->responsaveis()->where('trimestre', $trimestre)->get()->map(fn($r) => $r->user?->name ?? $r->nome_externo)->values()->toArray(),
             'atividades' => array_values(array_map(fn($a) => "Objetivos: {$a['objetivos']} | Recursos: {$a['recursos_acoes']} | Tempo: {$a['tempo']}", $validated['atividades'] ?? [])),
         ];
 
@@ -894,9 +935,20 @@ class PeiController extends Controller
     public function destroyApoio(Pei $pei, PeiApoio $apoio): RedirectResponse
     {
         $this->ensureAdminOrNai();
+        abort_if((int) $apoio->pei_id !== (int) $pei->id, 404);
 
         $nome = $apoio->nome;
         $apoio->delete();
+
+        AuditService::log(
+            'PEIs',
+            'Exclusão',
+            "Removeu a Equipe de Apoio '{$nome}' do PEI {$pei->codigo}",
+            $pei,
+            ['equipe_apoio' => $nome],
+            null
+        );
+
         return redirect()->route('peis.show', $pei->id)->with('success', "Equipe de apoio '{$nome}' e sua aba foram removidas com sucesso.");
     }
 
@@ -968,98 +1020,102 @@ class PeiController extends Controller
             'avaliacoes' => $peiDisciplinaAntigo ? $peiDisciplinaAntigo->avaliacoes->map(fn($av) => "Tipo: {$av->tipo} | Adotado: " . ($av->adotado ? 'Sim' : 'Não') . " | N1: " . ($av->nota_1 ?? '-') . " | N2: " . ($av->nota_2 ?? '-'))->values()->toArray() : [],
         ];
 
-        $peiDisciplina = PeiDisciplina::firstOrCreate([
-            'pei_id' => $pei->id,
-            'disciplina_id' => $disciplina->id,
-            'trimestre' => $trimestre,
-        ]);
+        $peiDisciplina = DB::transaction(function () use ($pei, $disciplina, $trimestre, $validated) {
+            $peiDisciplina = PeiDisciplina::firstOrCreate([
+                'pei_id' => $pei->id,
+                'disciplina_id' => $disciplina->id,
+                'trimestre' => $trimestre,
+            ]);
 
-        $peiDisciplina->update([
-            'grau_autonomia' => $validated['grau_autonomia'] ?? [],
-            'especifique_outros' => $validated['especifique_outros'] ?? null,
-        ]);
+            $peiDisciplina->update([
+                'grau_autonomia' => $validated['grau_autonomia'] ?? [],
+                'especifique_outros' => $validated['especifique_outros'] ?? null,
+            ]);
 
-        // atualiza os planejamentos pedagógicos da disciplina
-        $peiDisciplina->planejamentos()->delete();
-        if (!empty($validated['planejamentos'])) {
-            foreach ($validated['planejamentos'] as $idx => $plan) {
-                // sintetiza metodologias_recursos caso não venha preenchido diretamente
-                $metodologiasPartes = [];
-                if (!empty($plan['estrategias_ensino'])) {
-                    $metodologiasPartes[] = "Estratégias de ensino:\n• " . implode("\n• ", $plan['estrategias_ensino']);
-                }
-                if (!empty($plan['estrategias_ensino_outros'])) {
-                    $metodologiasPartes[] = "Outras estratégias de ensino: {$plan['estrategias_ensino_outros']}";
-                }
-                if (!empty($plan['estrategias_avaliacao'])) {
-                    $metodologiasPartes[] = "Estratégias e condições de avaliação:\n• " . implode("\n• ", $plan['estrategias_avaliacao']);
-                }
-                if (!empty($plan['estrategias_avaliacao_outros'])) {
-                    $metodologiasPartes[] = "Outras estratégias de avaliação: {$plan['estrategias_avaliacao_outros']}";
-                }
-                $metodologiasFinal = !empty($metodologiasPartes)
-                    ? implode("\n\n", $metodologiasPartes)
-                    : ($plan['metodologias_recursos'] ?? '');
+            // atualiza os planejamentos pedagógicos da disciplina
+            $peiDisciplina->planejamentos()->delete();
+            if (!empty($validated['planejamentos'])) {
+                foreach ($validated['planejamentos'] as $idx => $plan) {
+                    // sintetiza metodologias_recursos caso não venha preenchido diretamente
+                    $metodologiasPartes = [];
+                    if (!empty($plan['estrategias_ensino'])) {
+                        $metodologiasPartes[] = "Estratégias de ensino:\n• " . implode("\n• ", $plan['estrategias_ensino']);
+                    }
+                    if (!empty($plan['estrategias_ensino_outros'])) {
+                        $metodologiasPartes[] = "Outras estratégias de ensino: {$plan['estrategias_ensino_outros']}";
+                    }
+                    if (!empty($plan['estrategias_avaliacao'])) {
+                        $metodologiasPartes[] = "Estratégias e condições de avaliação:\n• " . implode("\n• ", $plan['estrategias_avaliacao']);
+                    }
+                    if (!empty($plan['estrategias_avaliacao_outros'])) {
+                        $metodologiasPartes[] = "Outras estratégias de avaliação: {$plan['estrategias_avaliacao_outros']}";
+                    }
+                    $metodologiasFinal = !empty($metodologiasPartes)
+                        ? implode("\n\n", $metodologiasPartes)
+                        : ($plan['metodologias_recursos'] ?? '');
 
-                $tempoOpcao = $plan['tempo_opcao'] ?? null;
-                $tempoOutro = $plan['tempo_outro'] ?? null;
-                $tempoFinal = ($tempoOpcao === 'Outro' ? $tempoOutro : $tempoOpcao) ?: ($plan['tempo'] ?? '');
+                    $tempoOpcao = $plan['tempo_opcao'] ?? null;
+                    $tempoOutro = $plan['tempo_outro'] ?? null;
+                    $tempoFinal = ($tempoOpcao === 'Outro' ? $tempoOutro : $tempoOpcao) ?: ($plan['tempo'] ?? '');
 
-                $avaliacaoPartes = [];
-                if (!empty($plan['avaliacao_desempenho'])) {
-                    $avaliacaoPartes[] = "• " . implode("\n• ", $plan['avaliacao_desempenho']);
-                }
-                if (!empty($plan['avaliacao_desempenho_outros'])) {
-                    $avaliacaoPartes[] = "Outras observações: {$plan['avaliacao_desempenho_outros']}";
-                }
-                $avaliacaoResultadosFinal = !empty($avaliacaoPartes)
-                    ? implode("\n\n", $avaliacaoPartes)
-                    : ($plan['avaliacao_resultados'] ?? null);
+                    $avaliacaoPartes = [];
+                    if (!empty($plan['avaliacao_desempenho'])) {
+                        $avaliacaoPartes[] = "• " . implode("\n• ", $plan['avaliacao_desempenho']);
+                    }
+                    if (!empty($plan['avaliacao_desempenho_outros'])) {
+                        $avaliacaoPartes[] = "Outras observações: {$plan['avaliacao_desempenho_outros']}";
+                    }
+                    $avaliacaoResultadosFinal = !empty($avaliacaoPartes)
+                        ? implode("\n\n", $avaliacaoPartes)
+                        : ($plan['avaliacao_resultados'] ?? null);
 
-                $peiDisciplina->planejamentos()->create([
-                    'objetivos' => $plan['objetivos'],
-                    'conteudos' => $plan['conteudos'],
-                    'metodologias_recursos' => $metodologiasFinal,
-                    'estrategias_ensino' => $plan['estrategias_ensino'] ?? null,
-                    'estrategias_ensino_outros' => $plan['estrategias_ensino_outros'] ?? null,
-                    'estrategias_avaliacao' => $plan['estrategias_avaliacao'] ?? null,
-                    'estrategias_avaliacao_outros' => $plan['estrategias_avaliacao_outros'] ?? null,
-                    'tempo' => $tempoFinal,
-                    'tempo_opcao' => $tempoOpcao,
-                    'tempo_outro' => $tempoOutro,
-                    'avaliacao_resultados' => $avaliacaoResultadosFinal,
-                    'avaliacao_desempenho' => $plan['avaliacao_desempenho'] ?? null,
-                    'avaliacao_desempenho_outros' => $plan['avaliacao_desempenho_outros'] ?? null,
-                    'sugestoes_aproveitamento' => $plan['sugestoes_aproveitamento'] ?? null,
-                    'ordem' => $idx,
-                ]);
+                    $peiDisciplina->planejamentos()->create([
+                        'objetivos' => $plan['objetivos'],
+                        'conteudos' => $plan['conteudos'],
+                        'metodologias_recursos' => $metodologiasFinal,
+                        'estrategias_ensino' => $plan['estrategias_ensino'] ?? null,
+                        'estrategias_ensino_outros' => $plan['estrategias_ensino_outros'] ?? null,
+                        'estrategias_avaliacao' => $plan['estrategias_avaliacao'] ?? null,
+                        'estrategias_avaliacao_outros' => $plan['estrategias_avaliacao_outros'] ?? null,
+                        'tempo' => $tempoFinal,
+                        'tempo_opcao' => $tempoOpcao,
+                        'tempo_outro' => $tempoOutro,
+                        'avaliacao_resultados' => $avaliacaoResultadosFinal,
+                        'avaliacao_desempenho' => $plan['avaliacao_desempenho'] ?? null,
+                        'avaliacao_desempenho_outros' => $plan['avaliacao_desempenho_outros'] ?? null,
+                        'sugestoes_aproveitamento' => $plan['sugestoes_aproveitamento'] ?? null,
+                        'ordem' => $idx,
+                    ]);
+                }
             }
-        }
 
-        // atualiza os instrumentos e notas de avaliação
-        $peiDisciplina->avaliacoes()->delete();
-        if (!empty($validated['avaliacoes'])) {
-            foreach ($validated['avaliacoes'] as $av) {
-                $peiDisciplina->avaliacoes()->create([
-                    'tipo' => $av['tipo'],
-                    'adotado' => (bool) $av['adotado'],
-                    'valor_1' => $av['valor_1'] ?? null,
-                    'nota_1' => $av['nota_1'] ?? null,
-                    'valor_2' => $av['valor_2'] ?? null,
-                    'nota_2' => $av['nota_2'] ?? null,
-                    'valor_3' => $av['valor_3'] ?? null,
-                    'nota_3' => $av['nota_3'] ?? null,
-                ]);
+            // atualiza os instrumentos e notas de avaliação
+            $peiDisciplina->avaliacoes()->delete();
+            if (!empty($validated['avaliacoes'])) {
+                foreach ($validated['avaliacoes'] as $av) {
+                    $peiDisciplina->avaliacoes()->create([
+                        'tipo' => $av['tipo'],
+                        'adotado' => (bool) $av['adotado'],
+                        'valor_1' => $av['valor_1'] ?? null,
+                        'nota_1' => $av['nota_1'] ?? null,
+                        'valor_2' => $av['valor_2'] ?? null,
+                        'nota_2' => $av['nota_2'] ?? null,
+                        'valor_3' => $av['valor_3'] ?? null,
+                        'nota_3' => $av['nota_3'] ?? null,
+                    ]);
+                }
             }
-        }
+
+            return $peiDisciplina->fresh(['planejamentos', 'avaliacoes']);
+        });
 
         $dadosNovos = [
             'disciplina' => $disciplina->nome,
             'trimestre' => $trimestre,
-            'grau_autonomia' => $validated['grau_autonomia'] ?? [],
-            'especifique_outros' => $validated['especifique_outros'] ?? null,
-            'planejamentos' => array_values(array_map(fn($p) => "Objetivos: {$p['objetivos']} | Conteúdos: {$p['conteudos']} | Recursos: " . ($p['metodologias_recursos'] ?? ''), $validated['planejamentos'] ?? [])),
-            'avaliacoes' => array_values(array_map(fn($av) => "Tipo: {$av['tipo']} | Adotado: " . ($av['adotado'] ? 'Sim' : 'Não') . " | N1: " . ($av['nota_1'] ?? '-') . " | N2: " . ($av['nota_2'] ?? '-'), $validated['avaliacoes'] ?? [])),
+            'grau_autonomia' => $peiDisciplina->grau_autonomia ?? [],
+            'especifique_outros' => $peiDisciplina->especifique_outros,
+            'planejamentos' => $peiDisciplina->planejamentos->map(fn($p) => "Objetivos: {$p->objetivos} | Conteúdos: {$p->conteudos} | Recursos: {$p->metodologias_recursos}")->values()->toArray(),
+            'avaliacoes' => $peiDisciplina->avaliacoes->map(fn($av) => "Tipo: {$av->tipo} | Adotado: " . ($av->adotado ? 'Sim' : 'Não') . " | N1: " . ($av->nota_1 ?? '-') . " | N2: " . ($av->nota_2 ?? '-'))->values()->toArray(),
         ];
 
         // registra o planejamento e avaliações da disciplina na trilha de auditoria
@@ -1073,11 +1129,33 @@ class PeiController extends Controller
         );
 
         $redirectUrl = $validated['redirect_to'] ?? null;
-        if ($redirectUrl) {
+        if ($redirectUrl && $this->isSafeRedirectUrl($request, $redirectUrl)) {
             return redirect($redirectUrl)->with('success', "Planejamento e avaliações de {$disciplina->nome} ({$trimestre}º Trimestre) salvos com sucesso.");
         }
 
         return redirect()->route('peis.show', $pei->id)->with('success', "Planejamento e avaliações de {$disciplina->nome} ({$trimestre}º Trimestre) salvos com sucesso.");
+    }
+
+    /**
+     * garante que uma url de redirecionamento pertence ao próprio aplicativo (previne open redirect).
+     */
+    private function isSafeRedirectUrl(Request $request, string $url): bool
+    {
+        if (str_starts_with($url, '/') && !str_starts_with($url, '//')) {
+            return true;
+        }
+
+        $parsed = parse_url($url);
+        if (!$parsed || empty($parsed['host'])) {
+            return false;
+        }
+
+        $scheme = strtolower($parsed['scheme'] ?? '');
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return false;
+        }
+
+        return strtolower($parsed['host']) === strtolower($request->getHost());
     }
 
     public function destroy(Pei $pei): RedirectResponse

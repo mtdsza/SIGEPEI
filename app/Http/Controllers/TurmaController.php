@@ -10,6 +10,7 @@ use App\Services\AuditService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -73,34 +74,38 @@ class TurmaController extends Controller
             'nome_curso' => ['required', 'string', 'max:255'],
             'ano_letivo' => ['required', 'integer'],
             'disciplinas' => ['nullable', 'array'],
-            'disciplinas.*.disciplina_id' => ['required', 'exists:disciplinas,id'],
+            'disciplinas.*.disciplina_id' => ['required', 'exists:disciplinas,id', 'distinct'],
             'disciplinas.*.professores' => ['nullable', 'array'],
-            'disciplinas.*.professores.*.user_id' => ['required', 'exists:users,id'],
+            'disciplinas.*.professores.*.user_id' => ['required', 'exists:users,id', 'distinct'],
             'disciplinas.*.professores.*.is_substituto' => ['boolean'],
         ]);
 
-        $turma = Turma::create([
-            'nome_curso' => $validated['nome_curso'],
-            'ano_letivo' => $validated['ano_letivo'],
-            'is_active' => true,
-        ]);
+        $turma = DB::transaction(function () use ($validated) {
+            $turma = Turma::create([
+                'nome_curso' => $validated['nome_curso'],
+                'ano_letivo' => $validated['ano_letivo'],
+                'is_active' => true,
+            ]);
 
-        if (!empty($validated['disciplinas'])) {
-            foreach ($validated['disciplinas'] as $discData) {
-                $turmaDisciplina = TurmaDisciplina::create([
-                    'turma_id' => $turma->id,
-                    'disciplina_id' => $discData['disciplina_id'],
-                ]);
+            if (!empty($validated['disciplinas'])) {
+                foreach ($validated['disciplinas'] as $discData) {
+                    $turmaDisciplina = TurmaDisciplina::create([
+                        'turma_id' => $turma->id,
+                        'disciplina_id' => $discData['disciplina_id'],
+                    ]);
 
-                if (!empty($discData['professores'])) {
-                    foreach ($discData['professores'] as $prof) {
-                        $turmaDisciplina->professores()->attach($prof['user_id'], [
-                            'is_substituto' => (bool) ($prof['is_substituto'] ?? false),
-                        ]);
+                    if (!empty($discData['professores'])) {
+                        foreach ($discData['professores'] as $prof) {
+                            $turmaDisciplina->professores()->attach($prof['user_id'], [
+                                'is_substituto' => (bool) ($prof['is_substituto'] ?? false),
+                            ]);
+                        }
                     }
                 }
             }
-        }
+
+            return $turma;
+        });
 
         // registra a criação da turma na trilha de auditoria
         AuditService::log(
@@ -214,9 +219,9 @@ class TurmaController extends Controller
             'nome_curso' => ['required', 'string', 'max:255'],
             'ano_letivo' => ['required', 'integer'],
             'disciplinas' => ['nullable', 'array'],
-            'disciplinas.*.disciplina_id' => ['required', 'exists:disciplinas,id'],
+            'disciplinas.*.disciplina_id' => ['required', 'exists:disciplinas,id', 'distinct'],
             'disciplinas.*.professores' => ['nullable', 'array'],
-            'disciplinas.*.professores.*.user_id' => ['required', 'exists:users,id'],
+            'disciplinas.*.professores.*.user_id' => ['required', 'exists:users,id', 'distinct'],
             'disciplinas.*.professores.*.is_substituto' => ['boolean'],
         ]);
 
@@ -229,30 +234,32 @@ class TurmaController extends Controller
             })->values()->toArray(),
         ];
 
-        $turma->update([
-            'nome_curso' => $validated['nome_curso'],
-            'ano_letivo' => $validated['ano_letivo'],
-        ]);
+        DB::transaction(function () use ($turma, $validated) {
+            $turma->update([
+                'nome_curso' => $validated['nome_curso'],
+                'ano_letivo' => $validated['ano_letivo'],
+            ]);
 
-        // recria as associações de disciplinas e docentes da turma
-        $turma->turmaDisciplinas()->delete();
+            // recria as associações de disciplinas e docentes da turma
+            $turma->turmaDisciplinas()->delete();
 
-        if (!empty($validated['disciplinas'])) {
-            foreach ($validated['disciplinas'] as $discData) {
-                $turmaDisciplina = TurmaDisciplina::create([
-                    'turma_id' => $turma->id,
-                    'disciplina_id' => $discData['disciplina_id'],
-                ]);
+            if (!empty($validated['disciplinas'])) {
+                foreach ($validated['disciplinas'] as $discData) {
+                    $turmaDisciplina = TurmaDisciplina::create([
+                        'turma_id' => $turma->id,
+                        'disciplina_id' => $discData['disciplina_id'],
+                    ]);
 
-                if (!empty($discData['professores'])) {
-                    foreach ($discData['professores'] as $prof) {
-                        $turmaDisciplina->professores()->attach($prof['user_id'], [
-                            'is_substituto' => (bool) ($prof['is_substituto'] ?? false),
-                        ]);
+                    if (!empty($discData['professores'])) {
+                        foreach ($discData['professores'] as $prof) {
+                            $turmaDisciplina->professores()->attach($prof['user_id'], [
+                                'is_substituto' => (bool) ($prof['is_substituto'] ?? false),
+                            ]);
+                        }
                     }
                 }
             }
-        }
+        });
 
         $dadosNovos = [
             'nome_curso' => $turma->nome_curso,

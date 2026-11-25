@@ -31,9 +31,9 @@ const filteredAlunos = computed(() => {
 
     const query = searchQuery.value.toLowerCase();
     return list.filter(item =>
-        item.nome.toLowerCase().includes(query) ||
-        item.matricula.toLowerCase().includes(query) ||
-        (item.turma && item.turma.toLowerCase().includes(query))
+        (item.nome ?? '').toLowerCase().includes(query) ||
+        (item.matricula ?? '').toLowerCase().includes(query) ||
+        (item.turma ?? '').toLowerCase().includes(query)
     );
 });
 

@@ -48,7 +48,7 @@ class CalendarioController extends Controller
     {
         $request->validate([
             'anos' => ['present', 'array'],
-            'anos.*.id' => ['nullable', 'integer', 'exists:anos_letivos,id'],
+            'anos.*.id' => ['nullable', 'integer', 'exists:anos_letivos,id', 'distinct'],
             'anos.*.ano' => ['required', 'integer', 'between:2000,2100', 'distinct'],
             'anos.*.concluido' => ['boolean'],
             'anos.*.trimestre1_inicio' => ['nullable', 'date'],
@@ -89,7 +89,7 @@ class CalendarioController extends Controller
                     continue;
                 }
                 $data = Carbon::parse($valor);
-                if ($anterior && $data->lt($anterior['data'])) {
+                if ($anterior && $data->lte($anterior['data'])) {
                     $erros["anos.{$i}.{$campo}"] = 'Deve ser posterior ao ' . self::ROTULOS[$anterior['campo']] . '.';
                 }
                 $anterior = ['campo' => $campo, 'data' => $data];
@@ -112,6 +112,9 @@ class CalendarioController extends Controller
         $alteracoes = [];
 
         DB::transaction(function () use ($anosPayload, $existentes, &$alteracoes) {
+            // fotografa o estado anterior antes da troca temporária de anos
+            $antesPorId = $existentes->map(fn (AnoLetivo $r) => $r->toCalendarioArray());
+
             // libera temporariamente os anos editados para evitar conflitos de unicidade ao trocar valores entre registros
             foreach ($anosPayload as $item) {
                 if (!empty($item['id']) && $existentes->has($item['id'])) {
@@ -131,7 +134,7 @@ class CalendarioController extends Controller
                 $registro = !empty($item['id']) ? $existentes->get($item['id']) : null;
 
                 if ($registro) {
-                    $antes = $registro->toCalendarioArray();
+                    $antes = $antesPorId->get($registro->id);
                     $registro->update($dados);
                     $depois = $registro->fresh()->toCalendarioArray();
                     if ($antes != $depois) {

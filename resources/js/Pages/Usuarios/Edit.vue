@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     user: {
@@ -20,6 +21,8 @@ const form = useForm({
     is_admin: props.user.is_admin ? 1 : 0,
     password: '',
 });
+
+useUnsavedChanges(form);
 
 const submit = () => {
     form.put(route('usuarios.update', props.user.id));

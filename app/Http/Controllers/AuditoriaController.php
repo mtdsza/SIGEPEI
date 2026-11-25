@@ -52,10 +52,18 @@ class AuditoriaController extends Controller
 
         // filtra registros pelo intervalo de datas especificado
         if ($request->filled('data_inicio')) {
-            $query->where('created_at', '>=', Carbon::parse($request->input('data_inicio'))->startOfDay());
+            try {
+                $query->where('created_at', '>=', Carbon::parse($request->input('data_inicio'))->startOfDay());
+            } catch (\Throwable) {
+                // ignora formato de data inválido para evitar erro 500
+            }
         }
         if ($request->filled('data_fim')) {
-            $query->where('created_at', '<=', Carbon::parse($request->input('data_fim'))->endOfDay());
+            try {
+                $query->where('created_at', '<=', Carbon::parse($request->input('data_fim'))->endOfDay());
+            } catch (\Throwable) {
+                // ignora formato de data inválido para evitar erro 500
+            }
         }
 
         $logs = $query->get()->map(function (AuditLog $log) {

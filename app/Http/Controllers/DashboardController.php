@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Aluno;
+use App\Models\AnoLetivo;
 use App\Models\Deficiencia;
 use App\Models\Pei;
 use App\Models\PeiApoio;
@@ -26,15 +27,30 @@ class DashboardController extends Controller
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $anoAtual = (int) date('Y');
-        $mesAtual = (int) date('n');
+        $anoAtual = (int) now()->year;
+        $mesAtual = (int) now()->month;
 
-        // define o trimestre vigente com base no mês atual do calendário
-        $trimestreVigente = match (true) {
-            $mesAtual <= 4 => 1,
-            $mesAtual <= 8 => 2,
-            default => 3,
-        };
+        // define o trimestre vigente consultando o calendário escolar do ano atual (com fallback por mês)
+        $trimestreVigente = null;
+        $calendarioAtual = AnoLetivo::where('ano', $anoAtual)->first();
+        if ($calendarioAtual) {
+            $hoje = now()->format('Y-m-d');
+            foreach ([1, 2, 3] as $t) {
+                $ini = $calendarioAtual->{"trimestre{$t}_inicio"}?->format('Y-m-d');
+                $fim = $calendarioAtual->{"trimestre{$t}_fim"}?->format('Y-m-d');
+                if ($ini && $fim && $hoje >= $ini && $hoje <= $fim) {
+                    $trimestreVigente = $t;
+                    break;
+                }
+            }
+        }
+        if ($trimestreVigente === null) {
+            $trimestreVigente = match (true) {
+                $mesAtual <= 4 => 1,
+                $mesAtual <= 8 => 2,
+                default => 3,
+            };
+        }
 
         // obtém o trimestre solicitado na requisição ou adota o vigente como padrão
         $trimestreSelecionado = (int) $request->input('trimestre', $trimestreVigente);
@@ -187,9 +203,11 @@ class DashboardController extends Controller
             }
         }
 
-        // verifica pendências nas equipes de apoio vinculadas ao usuário no trimestre
+        // verifica pendências nas equipes de apoio vinculadas ao usuário no trimestre (restrito aos peis ativos carregados)
+        $peisAtivosIds = $peisAtivos->pluck('id')->all();
         $apoiosVinculados = PeiApoioResponsavel::where('user_id', $user->id)
             ->where('trimestre', $trimestreSelecionado)
+            ->whereHas('apoio', fn ($q) => $q->whereIn('pei_id', $peisAtivosIds))
             ->with('apoio.pei.aluno', 'apoio.pei.turma', 'apoio.atividades')
             ->get();
 
@@ -218,6 +236,13 @@ class DashboardController extends Controller
             }
         }
 
+        // pré-carrega disciplinas por turma para evitar consultas N+1 nos loops abaixo
+        $turmaIdsAtivas = $peisAtivos->pluck('turma_id')->filter()->unique()->values();
+        $turmaDisciplinasPorTurma = TurmaDisciplina::whereIn('turma_id', $turmaIdsAtivas)
+            ->with(['disciplina', 'professores'])
+            ->get()
+            ->groupBy('turma_id');
+
         // compila todas as pendências globais para visualização da gestão e nai
         if ($user->is_admin || $user->cargo === 'NAI') {
             foreach ($peisAtivos as $pei) {
@@ -239,7 +264,7 @@ class DashboardController extends Controller
                 }
 
                 // valida se o planejamento e as avaliações das disciplinas foram concluídos
-                $turmaDiscs = TurmaDisciplina::where('turma_id', $pei->turma_id)->with('disciplina', 'professores')->get();
+                $turmaDiscs = $turmaDisciplinasPorTurma->get($pei->turma_id, collect());
                 foreach ($turmaDiscs as $td) {
                     $registroDisc = $pei->disciplinasTrimestres
                         ->where('disciplina_id', $td->disciplina_id)
@@ -253,23 +278,15 @@ class DashboardController extends Controller
                         $profs = $td->professores->pluck('name')->join(', ');
                         $todasPendencias->push([
                             'id' => "inst_disc_{$pei->id}_{$td->disciplina_id}_{$trimestreSelecionado}",
-                            'tipo' => 'disciplina',
                             'tipo_label' => 'Disciplina',
                             'pei_id' => $pei->id,
                             'pei_codigo' => $pei->codigo,
-                            'aluno_id' => $pei->aluno_id,
                             'aluno_nome' => $pei->aluno?->nome ?? 'Estudante',
                             'aluno_foto_url' => $pei->aluno?->foto_url,
-                            'aluno_matricula' => $pei->aluno?->matricula,
-                            'deficiencias' => $pei->aluno?->deficiencias->pluck('nome')->values()->toArray() ?? [],
                             'turma_nome' => $pei->turma?->nome_curso ?? 'Turma',
-                            'disciplina_id' => $td->disciplina_id,
-                            'disciplina_codigo' => $td->disciplina?->codigo,
                             'atribuicao' => $td->disciplina?->nome ?? 'Disciplina',
-                            'trimestre' => $trimestreSelecionado,
                             'responsaveis' => $profs ?: 'Sem professor associado',
                             'detalhe' => !$temPlanejamento && !$temAvaliacao ? 'Planejamento e avaliações pendentes' : (!$temPlanejamento ? 'Planejamento pendente' : 'Avaliações pendentes'),
-                            'dados_edicao' => $mapearDadosEdicao($registroDisc),
                         ]);
                     }
                 }
@@ -292,12 +309,15 @@ class DashboardController extends Controller
                 $totalItensPreenchidos++;
             }
 
-            // contabiliza preenchimento das disciplinas da turma
-            $disciplinasTurmaCount = TurmaDisciplina::where('turma_id', $p->turma_id)->count();
-            $totalItensEsperados += $disciplinasTurmaCount;
+            // contabiliza preenchimento das disciplinas efetivamente vinculadas à turma do pei
+            $disciplinasTurmaIds = $turmaDisciplinasPorTurma->get($p->turma_id, collect())
+                ->pluck('disciplina_id')
+                ->all();
+            $totalItensEsperados += count($disciplinasTurmaIds);
 
             $preenchidasCount = $p->disciplinasTrimestres
                 ->where('trimestre', $trimestreSelecionado)
+                ->whereIn('disciplina_id', $disciplinasTurmaIds)
                 ->filter(fn ($d) => $d->planejamentos->isNotEmpty() || $d->avaliacoes->isNotEmpty())
                 ->count();
 
@@ -305,13 +325,8 @@ class DashboardController extends Controller
         }
 
         $taxaConclusao = $totalItensEsperados > 0
-            ? round(($totalItensPreenchidos / $totalItensEsperados) * 100)
-            : 100;
-
-        // turmas e disciplinas lecionadas pelo usuário
-        $turmasDisciplinasUsuario = TurmaDisciplina::whereHas('professores', function ($q) use ($user) {
-            $q->where('users.id', $user->id);
-        })->with('disciplina')->get();
+            ? min(100, (int) round(($totalItensPreenchidos / $totalItensEsperados) * 100))
+            : 0;
 
         $turmasDocenteIds = $turmasDisciplinasUsuario->pluck('turma_id')->unique()->toArray();
 
@@ -415,10 +430,11 @@ class DashboardController extends Controller
             ];
         })->values();
 
-        // agrega dados para os gráficos de distribuição por turmas e deficiências
+        // agrega dados para os gráficos de distribuição por turmas e deficiências (apenas registros ativos)
         $distribuicaoTurmas = Turma::where('is_active', true)
             ->withCount(['alunos' => function ($q) {
-                $q->where('aluno_turma.is_atual', true);
+                $q->where('alunos.is_active', true)
+                    ->where('aluno_turma.is_atual', true);
             }])
             ->get()
             ->map(fn ($t) => [
@@ -427,8 +443,9 @@ class DashboardController extends Controller
                 'alunos_count' => $t->alunos_count,
             ]);
 
-        $distribuicaoDeficiencias = Deficiencia::has('alunos')
-            ->withCount('alunos')
+        $distribuicaoDeficiencias = Deficiencia::where('is_active', true)
+            ->whereHas('alunos', fn ($q) => $q->where('alunos.is_active', true))
+            ->withCount(['alunos' => fn ($q) => $q->where('alunos.is_active', true)])
             ->orderByDesc('alunos_count')
             ->take(6)
             ->get()

@@ -93,7 +93,7 @@ const getAcaoBadgeClass = (acao) => {
 
                     <div>
                         <span class="block text-slate-500 dark:text-zinc-400 font-medium">Endereço IP:</span>
-                        <span class="text-slate-900 dark:text-white font-mono font-semibold">{{ log.ip_address || '127.0.0.1' }}</span>
+                        <span class="text-slate-900 dark:text-white font-mono font-semibold">{{ log.ip_address || '—' }}</span>
                     </div>
 
                     <div>

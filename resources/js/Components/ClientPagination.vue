@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 
 const props = defineProps({
     totalItems: {
@@ -23,6 +23,12 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue']);
 
 const totalPages = computed(() => Math.ceil(props.totalItems / props.itemsPerPage) || 1);
+
+watch(totalPages, (newTotal) => {
+    if (props.modelValue > newTotal) {
+        emit('update:modelValue', Math.max(1, newTotal));
+    }
+});
 
 const from = computed(() => {
     if (props.totalItems === 0) return 0;

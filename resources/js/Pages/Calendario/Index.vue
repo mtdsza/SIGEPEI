@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     anosLetivos: {
@@ -139,26 +140,9 @@ const descartarAlteracoes = () => {
 };
 
 // alerta o usuário ao sair da página com alterações pendentes
-const avisoSaida = (e) => {
-    if (possuiAlteracoes.value) {
-        e.preventDefault();
-        e.returnValue = '';
-    }
-};
-let removerListenerInertia = null;
-onMounted(() => {
-    window.addEventListener('beforeunload', avisoSaida);
-    removerListenerInertia = router.on('before', (event) => {
-        const visita = event.detail.visit;
-        const ehAcaoDaPagina = visita.url.pathname.startsWith('/calendario') && visita.method !== 'get';
-        if (possuiAlteracoes.value && !ehAcaoDaPagina) {
-            return confirm('Existem alterações não salvas no calendário. Deseja sair mesmo assim?');
-        }
-    });
-});
+useUnsavedChanges(possuiAlteracoes);
+
 onBeforeUnmount(() => {
-    window.removeEventListener('beforeunload', avisoSaida);
-    removerListenerInertia?.();
     clearTimeout(feedbackTimer);
 });
 

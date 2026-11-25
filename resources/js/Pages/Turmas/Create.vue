@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     disciplinasDisponiveis: {
@@ -25,6 +26,8 @@ const form = useForm({
         },
     ],
 });
+
+useUnsavedChanges(form);
 
 const adicionarDisciplina = () => {
     form.disciplinas.push({

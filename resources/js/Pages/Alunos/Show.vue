@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { confirmDiscard, useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     aluno: {
@@ -14,6 +15,9 @@ const props = defineProps({
     },
 });
 
+// controle de fallback caso a foto do aluno falhe ao carregar
+const fotoErro = ref(false);
+
 // controle de exibição do histórico de turmas anteriores
 const showHistoricoTurmas = ref(false);
 
@@ -24,6 +28,15 @@ const turmaForm = useForm({
     turma_id: '',
     ano_letivo: new Date().getFullYear(),
 });
+
+useUnsavedChanges(() => showTurmaModal.value && turmaForm.isDirty);
+
+const closeTurmaModal = () => {
+    if (!confirmDiscard(turmaForm.isDirty)) return;
+    showTurmaModal.value = false;
+    turmaForm.reset();
+    turmaForm.clearErrors();
+};
 
 const submitAssociarTurma = () => {
     turmaForm.post(route('alunos.associar-turma', props.aluno.id), {
@@ -67,9 +80,10 @@ const submitAssociarTurma = () => {
                     <!-- foto ou avatar do discente -->
                     <div class="shrink-0 flex flex-col items-center">
                         <img
-                            v-if="aluno.foto_url"
+                            v-if="aluno.foto_url && !fotoErro"
                             :src="aluno.foto_url"
                             :alt="`Foto de ${aluno.nome}`"
+                            @error="fotoErro = true"
                             class="w-28 h-28 object-cover rounded-sm border border-slate-200 dark:border-zinc-700 shadow-sm bg-slate-100 dark:bg-zinc-900"
                         />
                         <template v-else>
@@ -156,8 +170,17 @@ const submitAssociarTurma = () => {
 
                             <div>
                                 <span class="block text-slate-500 dark:text-zinc-400 font-medium">Status Cadastral:</span>
-                                <span class="inline-block mt-0.5 px-2 py-0.5 text-[10px] font-semibold rounded-sm bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                <span
+                                    v-if="aluno.is_active !== false"
+                                    class="inline-block mt-0.5 px-2 py-0.5 text-[10px] font-semibold rounded-sm bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                                >
                                     Ativo
+                                </span>
+                                <span
+                                    v-else
+                                    class="inline-block mt-0.5 px-2 py-0.5 text-[10px] font-semibold rounded-sm bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
+                                >
+                                    Inativo
                                 </span>
                             </div>
                         </div>
@@ -391,7 +414,7 @@ const submitAssociarTurma = () => {
                     </h3>
                     <button
                         type="button"
-                        @click="showTurmaModal = false"
+                        @click="closeTurmaModal"
                         class="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 text-lg leading-none"
                     >
                         &times;
@@ -440,7 +463,7 @@ const submitAssociarTurma = () => {
                     <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-zinc-700">
                         <button
                             type="button"
-                            @click="showTurmaModal = false"
+                            @click="closeTurmaModal"
                             class="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 text-xs font-semibold rounded-sm border border-slate-300 dark:border-zinc-600"
                         >
                             Cancelar

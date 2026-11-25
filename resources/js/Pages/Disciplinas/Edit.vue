@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     disciplina: {
@@ -13,6 +14,8 @@ const form = useForm({
     codigo: props.disciplina.codigo,
     nome: props.disciplina.nome,
 });
+
+useUnsavedChanges(form);
 
 const submit = () => {
     form.put(route('disciplinas.update', props.disciplina.id));

@@ -7,6 +7,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeficienciaController;
 use App\Http\Controllers\DisciplinaController;
 use App\Http\Controllers\PeiController;
+use App\Http\Controllers\PeiReportController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TurmaController;
 use App\Http\Controllers\UserController;
@@ -80,6 +81,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // planos educacionais individualizados (consulta e preenchimento de atribuições)
     Route::get('/peis', [PeiController::class, 'index'])->name('peis.index');
     Route::get('/peis/{pei}', [PeiController::class, 'show'])->name('peis.show');
+    Route::get('/peis/{pei}/relatorio', [PeiReportController::class, 'exportPei'])->name('peis.relatorio');
+    Route::get('/peis/{pei}/disciplinas/{disciplina}/relatorio', [PeiReportController::class, 'exportDisciplina'])->name('peis.disciplina-relatorio');
     Route::post('/peis/{pei}/disciplinas/{disciplina}/trimestre', [PeiController::class, 'updateDisciplinaTrimestre'])->name('peis.update-disciplina-trimestre');
     Route::post('/peis/{pei}/apoio/{apoio}/trimestre', [PeiController::class, 'updateApoioTrimestre'])->name('peis.update-apoio-trimestre');
 

@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const form = useForm({
     name: '',
@@ -9,6 +10,8 @@ const form = useForm({
     is_admin: 0,
     password: '',
 });
+
+useUnsavedChanges(form);
 
 const submit = () => {
     form.post(route('usuarios.store'));

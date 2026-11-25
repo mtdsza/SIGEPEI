@@ -5,6 +5,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import ClientPagination from '@/Components/ClientPagination.vue';
 import AlunoAvatar from '@/Components/AlunoAvatar.vue';
 import PendenciaProfessorModal from '@/Components/PendenciaProfessorModal.vue';
+import ImprimirDisciplinaPromptModal from '@/Components/ImprimirDisciplinaPromptModal.vue';
 
 const props = defineProps({
     metrics: {
@@ -57,9 +58,9 @@ const filteredPeis = computed(() => {
     if (!searchPei.value.trim()) return props.peisRecentes;
     const term = searchPei.value.toLowerCase();
     return props.peisRecentes.filter(p =>
-        p.aluno_nome.toLowerCase().includes(term) ||
-        p.codigo.toLowerCase().includes(term) ||
-        p.turma_nome.toLowerCase().includes(term)
+        (p.aluno_nome ?? '').toLowerCase().includes(term) ||
+        (p.codigo ?? '').toLowerCase().includes(term) ||
+        (p.turma_nome ?? '').toLowerCase().includes(term)
     );
 });
 
@@ -67,6 +68,8 @@ const filteredPeis = computed(() => {
 const resetPeiPage = () => {
     tablePage.value = 1;
 };
+
+watch(searchPei, resetPeiPage);
 
 // listagens paginadas computadas em memória
 const paginatedMinhasPendencias = computed(() => {
@@ -106,10 +109,19 @@ const fecharModalPendencia = () => {
     showModalPendencia.value = false;
     pendenciaSelecionada.value = null;
 };
+
+// prompt de impressão após preenchimento rápido de disciplina no dashboard
+const showImprimirDisciplinaPrompt = ref(false);
+const disciplinaRecemSalva = ref(null);
+
+const aoSalvarPendencia = (dados) => {
+    disciplinaRecemSalva.value = dados;
+    showImprimirDisciplinaPrompt.value = true;
+};
 </script>
 
 <template>
-    <Head title="Painel de Controle - SIGEPEI" />
+    <Head title="Visão Geral - SIGEPEI" />
 
     <AuthenticatedLayout>
         <template #header>
@@ -117,7 +129,7 @@ const fecharModalPendencia = () => {
                 <div>
                     <div class="flex items-center space-x-2.5">
                         <h1 class="text-xl font-bold text-slate-900 dark:text-white">
-                            Painel de Controle
+                            Visão Geral
                         </h1>
                         <span class="px-2 py-0.5 text-[11px] font-semibold rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                             {{ usuario.cargo }}
@@ -354,7 +366,7 @@ const fecharModalPendencia = () => {
                                         <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                         </svg>
-                                        <span>Preencher sem sair da página</span>
+                                        <span>Preencher</span>
                                     </button>
                                     <Link
                                         :href="route('peis.show', item.pei_id)"
@@ -392,7 +404,7 @@ const fecharModalPendencia = () => {
                             </div>
                             <div>
                                 <div class="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                                    Excelente! Todas as suas atribuições pessoais do {{ metrics.trimestre_selecionado }}º Trimestre estão em dia.
+                                    Todas as suas atribuições do {{ metrics.trimestre_selecionado }}º Trimestre estão concluídas.
                                 </div>
                                 <div class="text-[11px] text-emerald-700 dark:text-emerald-400">
                                     Nenhuma pendência pessoal atribuída ao seu usuário no trimestre selecionado.
@@ -466,28 +478,11 @@ const fecharModalPendencia = () => {
                                 </div>
 
                                 <div class="flex items-center gap-2 pt-1">
-                                    <button
-                                        v-if="item.tipo === 'disciplina'"
-                                        type="button"
-                                        @click="abrirModalPendencia(item)"
-                                        class="inline-flex items-center justify-center flex-1 px-3 py-1.5 bg-[#006633] hover:bg-emerald-800 text-white text-[11px] font-semibold rounded-sm transition-colors shadow-2xs cursor-pointer gap-1.5"
-                                    >
-                                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
-                                        <span>Editar aqui</span>
-                                    </button>
                                     <Link
                                         :href="route('peis.show', item.pei_id)"
-                                        :class="[
-                                            'inline-flex items-center justify-center text-[11px] font-semibold rounded-sm transition-colors',
-                                            item.tipo === 'disciplina'
-                                                ? 'px-2 py-1.5 bg-slate-100 dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 shrink-0'
-                                                : 'w-full px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white shadow-2xs'
-                                        ]"
+                                        class="inline-flex items-center justify-center w-full px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-semibold rounded-sm transition-colors shadow-2xs"
                                     >
-                                        <span v-if="item.tipo === 'disciplina'">Ver PEI &rarr;</span>
-                                        <span v-else>Ver no PEI &rarr;</span>
+                                        Abrir PEI &rarr;
                                     </Link>
                                 </div>
                             </div>
@@ -504,7 +499,7 @@ const fecharModalPendencia = () => {
 
                     <div v-else class="bg-emerald-50/70 dark:bg-emerald-950/20 border-l-4 border-[#006633] p-4 rounded-r-sm border-y border-r border-emerald-200 dark:border-emerald-900/50 shadow-xs flex items-center justify-between">
                         <div class="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                            Parabéns! 100% dos PEIs do campus estão com o {{ metrics.trimestre_selecionado }}º Trimestre preenchido!
+                            Todos os PEIs do campus estão com o {{ metrics.trimestre_selecionado }}º Trimestre preenchido.
                         </div>
                     </div>
                 </div>
@@ -646,11 +641,25 @@ const fecharModalPendencia = () => {
             </div>
         </div>
 
-        <!-- Modal de Preenchimento Rápido da Pendência do Professor -->
+        <!-- modal de preenchimento rápido da pendência do professor -->
         <PendenciaProfessorModal
             :show="showModalPendencia"
             :pendencia="pendenciaSelecionada"
             @close="fecharModalPendencia"
+            @saved="aoSalvarPendencia"
+        />
+
+        <!-- prompt de impressão após preenchimento de disciplina -->
+        <ImprimirDisciplinaPromptModal
+            :show="showImprimirDisciplinaPrompt"
+            :pei-id="disciplinaRecemSalva?.pei_id"
+            :pei-codigo="disciplinaRecemSalva?.pei_codigo || ''"
+            :aluno-nome="disciplinaRecemSalva?.aluno_nome || ''"
+            :disciplina-id="disciplinaRecemSalva?.disciplina_id"
+            :disciplina-codigo="disciplinaRecemSalva?.disciplina_codigo || ''"
+            :disciplina-nome="disciplinaRecemSalva?.disciplina_nome || ''"
+            :trimestre="disciplinaRecemSalva?.trimestre || 1"
+            @close="showImprimirDisciplinaPrompt = false"
         />
     </AuthenticatedLayout>
 </template>

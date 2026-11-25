@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges';
 
 const props = defineProps({
     deficienciasDisponiveis: {
@@ -20,6 +21,8 @@ const form = useForm({
     turma_id: '',
     deficiencias: [],
 });
+
+useUnsavedChanges(form);
 
 const submit = () => {
     form.post(route('alunos.store'));
